@@ -9,7 +9,7 @@ on:
 
 jobs:
   ci:
-    name: 🔬 Type-check, Test & Build
+    name: 🔬 CI/CD
     runs-on: ubuntu-latest
 
     steps:

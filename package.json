@@ -1,5 +1,5 @@
 {
-  "name": "@bav-ai-labs/bv",
+  "name": "@thuanpanda/bv",
   "version": "0.2.1",
   "description": "Bavaan internal CLI — skills, tools, and more",
   "type": "module",

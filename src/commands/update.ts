@@ -11,7 +11,7 @@ import { log, spin } from '../utils/logger';
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PKG_NAME = '@bav-ai-labs/bv';
+const PKG_NAME = '@thuanpanda/bv';
 
 /**
  * Find package.json by walking up from __dirname.

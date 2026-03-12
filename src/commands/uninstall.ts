@@ -5,7 +5,7 @@ import { Command } from 'commander';
 
 import { log, spin } from '../utils/logger';
 
-const PKG_NAME = '@bav-ai-labs/bv';
+const PKG_NAME = '@thuanpanda/bv';
 
 export const uninstallCommand = new Command('uninstall')
   .description('Uninstall bv CLI from your machine')

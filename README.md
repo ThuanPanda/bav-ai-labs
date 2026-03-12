@@ -23,7 +23,7 @@ This is a **private** package hosted on GitHub Packages. You must be a collabora
 Run these two commands in your terminal (replace `YOUR_TOKEN` with the token you just created):
 
 ```bash
-echo "@bav-ai-labs:registry=https://npm.pkg.github.com" >> ~/.npmrc
+echo "@thuanpanda:registry=https://npm.pkg.github.com" >> ~/.npmrc
 echo "//npm.pkg.github.com/:_authToken=YOUR_TOKEN" >> ~/.npmrc
 ```
 
@@ -32,7 +32,7 @@ This only needs to be done **once** per machine.
 ### Step 3 — Install
 
 ```bash
-npm install -g @bav-ai-labs/bv
+npm install -g @thuanpanda/bv
 ```
 
 ### Step 4 — Verify
