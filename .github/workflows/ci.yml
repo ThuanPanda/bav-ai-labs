@@ -14,15 +14,15 @@ jobs:
 
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v6.0.2
 
       - name: 📦 Set up pnpm
-        uses: pnpm/action-setup@v4.1.0
+        uses: pnpm/action-setup@v4.3.0
         with:
           version: latest
 
       - name: 🟢 Set up Node.js
-        uses: actions/setup-node@v4.4.0
+        uses: actions/setup-node@v6.3.0
         with:
           node-version: '24'
           cache: 'pnpm'
@@ -40,8 +40,15 @@ jobs:
       - name: 🏗️ Build
         run: pnpm build
 
+      - name: 🔍 Should publish?
+        if: github.ref == 'refs/heads/main'
+        id: should_publish
+        run: bash .github/scripts/should-publish.sh
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: 🚢 Publish to GitHub Packages
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.ref == 'refs/heads/main' && steps.should_publish.outputs.changed == 'true'
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
