@@ -14,8 +14,6 @@ jobs:
   ci:
     name: 🔬 CI/CD
     runs-on: ubuntu-latest
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
 
     steps:
       - name: 📥 Checkout
@@ -54,3 +52,5 @@ jobs:
       - name: 🚢 Publish to GitHub Packages
         if: github.ref == 'refs/heads/main' && steps.should_publish.outputs.changed == 'true'
         run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
