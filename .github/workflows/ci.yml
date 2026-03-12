@@ -45,10 +45,10 @@ jobs:
         id: should_publish
         run: bash .github/scripts/should-publish.sh
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
 
       - name: 🚢 Publish to GitHub Packages
         if: github.ref == 'refs/heads/main' && steps.should_publish.outputs.changed == 'true'
         run: npm publish
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
