@@ -7,35 +7,20 @@ import { Command } from 'commander';
 
 import { getInstalledSkills, type Provider, type Scope, setInstalledSkill } from '../config';
 import { log } from '../utils/logger';
-import { getInstallDir, isFlatProvider, providerLabel } from '../utils/providers';
-import { getBundledSkillFiles, getBundledSkills, stripFrontmatter } from '../utils/skills';
+import { getInstallDir, providerLabel } from '../utils/providers';
+import { getBundledSkillFiles, getBundledSkills } from '../utils/skills';
 
 // ─── COPY LOGIC ──────────────────────────────────────────────────────────────
 
 function copySkill(skillName: string, provider: Provider, scope: Scope, cwd: string): string {
   const installDir = getInstallDir(provider, scope, cwd);
-
-  if (isFlatProvider(provider)) {
-    // VS Code: write a single <name>.instructions.md in the instructions dir
-    fs.mkdirSync(installDir, { recursive: true });
-    const files = getBundledSkillFiles(skillName);
-    const skillMd = files.find((f) => f.name === 'SKILL.md');
-    if (skillMd) {
-      const body = stripFrontmatter(fs.readFileSync(skillMd.fullPath, 'utf8'));
-      const dest = path.join(installDir, `${skillName}.instructions.md`);
-      fs.writeFileSync(dest, body);
-    }
-    return installDir;
-  } else {
-    // All others: copy the full skill directory
-    const destDir = path.join(installDir, skillName);
-    fs.mkdirSync(destDir, { recursive: true });
-    const files = getBundledSkillFiles(skillName);
-    for (const file of files) {
-      fs.copyFileSync(file.fullPath, path.join(destDir, file.name));
-    }
-    return destDir;
+  const destDir = path.join(installDir, skillName);
+  fs.mkdirSync(destDir, { recursive: true });
+  const files = getBundledSkillFiles(skillName);
+  for (const file of files) {
+    fs.copyFileSync(file.fullPath, path.join(destDir, file.name));
   }
+  return destDir;
 }
 
 // ─── COMMAND ─────────────────────────────────────────────────────────────────
@@ -54,15 +39,23 @@ export const addCommand = new Command('add').description('Install a skill').addC
         process.exit(1);
       }
 
-      // Check already installed
+      // Check already installed — but only block if the install directory still exists
       const installed = getInstalledSkills();
       if (installed[skillName]) {
         const entry = installed[skillName];
-        log.warn(
-          `"${skillName}" is already installed (${providerLabel(entry.provider)}, ${entry.scope}).`,
-        );
-        log.info(`Run ${chalk.cyan('bv up')} to check for updates.`);
-        return;
+        const cwd = process.cwd();
+        const installDir = getInstallDir(entry.provider, entry.scope, cwd);
+        const destDir = path.join(installDir, skillName);
+
+        if (fs.existsSync(destDir)) {
+          log.warn(
+            `"${skillName}" is already installed (${providerLabel(entry.provider)}, ${entry.scope}).`,
+          );
+          log.info(`Run ${chalk.cyan('bv up')} to check for updates.`);
+          return;
+        }
+
+        // Directory was removed — allow reinstall (will overwrite config entry)
       }
 
       console.log();
@@ -73,7 +66,6 @@ export const addCommand = new Command('add').description('Install a skill').addC
         choices: [
           { name: 'OpenCode', value: 'opencode' },
           { name: 'Claude Code', value: 'claude' },
-          { name: 'VS Code (Copilot)', value: 'vscode' },
           { name: 'Antigravity', value: 'antigravity' },
         ],
       });

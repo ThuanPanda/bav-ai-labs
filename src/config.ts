@@ -2,7 +2,7 @@ import Conf from 'conf';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
-export type Provider = 'opencode' | 'claude' | 'vscode' | 'antigravity';
+export type Provider = 'opencode' | 'claude' | 'antigravity';
 export type Scope = 'global' | 'project';
 
 export interface InstalledSkillEntry {

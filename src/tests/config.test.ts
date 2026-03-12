@@ -54,7 +54,7 @@ describe('config — installedSkills', () => {
 
   it('tracks multiple skills independently', () => {
     setInstalledSkill('skill-a', '1.0.0', 'opencode', 'global');
-    setInstalledSkill('skill-b', '0.5.0', 'vscode', 'project');
+    setInstalledSkill('skill-b', '0.5.0', 'claude', 'project');
     const skills = getInstalledSkills();
     expect(Object.keys(skills)).toHaveLength(2);
     expect(skills['skill-a'].version).toBe('1.0.0');

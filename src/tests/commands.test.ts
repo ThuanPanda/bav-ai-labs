@@ -220,25 +220,59 @@ describe('add skill command', () => {
     expect(skills['skill-a']?.provider).toBe('opencode');
   });
 
-  it('installs skill with vscode + project scope (writes flat .instructions.md)', async () => {
+  it('installs skill with claude + project scope', async () => {
     mockSelect
-      .mockResolvedValueOnce('vscode') // provider
+      .mockResolvedValueOnce('claude') // provider
       .mockResolvedValueOnce('project'); // scope
     const { addCommand } = await import('../commands/add');
     await addCommand.parseAsync(argv('skill', 'skill-a'));
     expect(mockMkdirSync).toHaveBeenCalled();
-    expect(mockWriteFileSync).toHaveBeenCalled();
-    const [[destPath]] = mockWriteFileSync.mock.calls;
-    expect(String(destPath)).toMatch(/skill-a\.instructions\.md$/);
+    expect(mockCopyFileSync).toHaveBeenCalled();
+    const skills = mockStore['installedSkills'] as Record<
+      string,
+      { version: string; provider: string; scope: string }
+    >;
+    expect(skills['skill-a']?.provider).toBe('claude');
+    expect(skills['skill-a']?.scope).toBe('project');
   });
 
-  it('warns when skill is already installed', async () => {
+  it('warns when skill is already installed and directory still exists', async () => {
     mockStore['installedSkills'] = {
       'skill-a': { version: '1.0.0', provider: 'opencode', scope: 'global', installedAt: '' },
     };
+    // existsSync returns true for the install dir so warning is triggered
+    mockExistsSync.mockImplementation((p: string) => {
+      if (String(p).endsWith('skills')) return true;
+      if (String(p).includes('skill-a')) return true;
+      if (String(p).includes('skill-b')) return true;
+      return false;
+    });
     const { addCommand } = await import('../commands/add');
     await addCommand.parseAsync(argv('skill', 'skill-a'));
     expect(mockSelect).not.toHaveBeenCalled();
+  });
+
+  it('allows reinstall when installed directory was deleted', async () => {
+    mockStore['installedSkills'] = {
+      'skill-a': { version: '1.0.0', provider: 'opencode', scope: 'global', installedAt: '' },
+    };
+    const os = await import('node:os');
+    const home = os.default.homedir();
+    const deletedPath = `${home}/.config/opencode/skills/skill-a`;
+    mockExistsSync.mockImplementation((p: string) => {
+      // The global install dest no longer exists
+      if (String(p) === deletedPath) return false;
+      // everything else (bundled dirs, etc.) exists
+      if (String(p).endsWith('skills')) return true;
+      if (String(p).includes('skill-a')) return true;
+      if (String(p).includes('skill-b')) return true;
+      return false;
+    });
+    mockSelect.mockResolvedValueOnce('opencode').mockResolvedValueOnce('global');
+    const { addCommand } = await import('../commands/add');
+    await addCommand.parseAsync(argv('skill', 'skill-a'));
+    expect(mockSelect).toHaveBeenCalled();
+    expect(mockMkdirSync).toHaveBeenCalled();
   });
 });
 
