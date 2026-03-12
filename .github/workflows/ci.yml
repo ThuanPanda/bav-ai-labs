@@ -7,12 +7,15 @@ on:
   pull_request:
     branches: ['**']
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   ci:
     name: 🔬 CI/CD
     runs-on: ubuntu-latest
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
 
     steps:
       - name: 📥 Checkout
@@ -47,11 +50,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         id: should_publish
         run: bash .github/scripts/should-publish.sh
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
 
       - name: 🚢 Publish to GitHub Packages
         if: github.ref == 'refs/heads/main' && steps.should_publish.outputs.changed == 'true'
         run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
