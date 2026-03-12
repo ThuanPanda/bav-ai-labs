@@ -44,18 +44,22 @@ export const addCommand = new Command('add').description('Install a skill').addC
       if (installed[skillName]) {
         const entry = installed[skillName];
         const cwd = process.cwd();
-        const installDir = getInstallDir(entry.provider, entry.scope, cwd);
-        const destDir = path.join(installDir, skillName);
 
-        if (fs.existsSync(destDir)) {
-          log.warn(
-            `"${skillName}" is already installed (${providerLabel(entry.provider)}, ${entry.scope}).`,
-          );
-          log.info(`Run ${chalk.cyan('bv up')} to check for updates.`);
-          return;
+        // Guard against a corrupt/incomplete config entry (e.g. written by an older CLI version)
+        if (entry.provider && entry.scope) {
+          const installDir = getInstallDir(entry.provider, entry.scope, cwd);
+          const destDir = path.join(installDir, skillName);
+
+          if (fs.existsSync(destDir)) {
+            log.warn(
+              `"${skillName}" is already installed (${providerLabel(entry.provider)}, ${entry.scope}).`,
+            );
+            log.info(`Run ${chalk.cyan('bv up')} to check for updates.`);
+            return;
+          }
         }
 
-        // Directory was removed — allow reinstall (will overwrite config entry)
+        // Directory was removed or entry is incomplete — allow reinstall (will overwrite config entry)
       }
 
       console.log();
