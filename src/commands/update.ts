@@ -36,7 +36,7 @@ function getCurrentVersion(): string {
 
 function getLatestVersion(): string | undefined {
   try {
-    const result = execSync(`npm view ${PKG_NAME} version 2>/dev/null`, {
+    const result = execSync(`npm view ${PKG_NAME} version`, {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
