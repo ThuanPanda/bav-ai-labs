@@ -1,0 +1,11 @@
+# Source files — not needed at runtime
+src/
+tsup.config.ts
+tsconfig.json
+vitest.config.ts
+AGENTS.md
+pnpm-lock.yaml
+
+# Dev artifacts
+node_modules/
+dist/index.js.map
