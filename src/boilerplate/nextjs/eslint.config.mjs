@@ -1,23 +1,10 @@
-import boundaries from 'eslint-plugin-boundaries';
-import { dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { FlatCompat } from '@eslint/eslintrc';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
+import nextConfig from 'eslint-config-next/typescript';
 
 const eslintConfig = [
-  ...compat.extends('next/typescript'),
+  ...nextConfig,
 
   {
     files: ['src/**/*.{ts,tsx}'],
-    plugins: {
-      boundaries,
-    },
     rules: {
       '@typescript-eslint/no-unused-vars': [
         'error',
@@ -40,14 +27,6 @@ const eslintConfig = [
         },
       ],
       '@typescript-eslint/no-explicit-any': 'off',
-    },
-    settings: {
-      'boundaries/elements': [
-        { type: 'feature', pattern: 'src/features/*/index.{ts,tsx}' },
-        { type: 'shared', pattern: 'src/shared/**' },
-      ],
-      'boundaries/include': ['src/**/*'],
-      'boundaries/ignore': ['**/*.test.ts', '**/*.spec.ts'],
     },
   },
 ];

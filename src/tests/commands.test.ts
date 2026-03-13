@@ -257,8 +257,9 @@ describe('add skill command', () => {
       'skill-a': { version: '1.0.0', provider: 'opencode', scope: 'global', installedAt: '' },
     };
     const os = await import('node:os');
+    const { default: nodePath } = await import('node:path');
     const home = os.default.homedir();
-    const deletedPath = `${home}/.config/opencode/skills/skill-a`;
+    const deletedPath = nodePath.join(home, '.config', 'opencode', 'skills', 'skill-a');
     mockExistsSync.mockImplementation((p: string) => {
       // The global install dest no longer exists
       if (String(p) === deletedPath) return false;
