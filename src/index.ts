@@ -7,6 +7,7 @@ import { Command } from 'commander';
 import { addCommand } from './commands/add';
 import { infoCommand } from './commands/info';
 import { lsCommand } from './commands/ls';
+import { newCommand } from './commands/new';
 import { uninstallCommand } from './commands/uninstall';
 import { upCommand } from './commands/up';
 import { updateCommand } from './commands/update';
@@ -28,6 +29,7 @@ program
 
 program.addCommand(lsCommand);
 program.addCommand(addCommand);
+program.addCommand(newCommand);
 program.addCommand(upCommand);
 program.addCommand(infoCommand);
 program.addCommand(updateCommand);
