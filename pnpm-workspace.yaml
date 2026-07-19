@@ -1,2 +1,4 @@
 allowBuilds:
   esbuild: true
+  # Native optional; prebuilds cover CI. Explicit false avoids ERR_PNPM_IGNORED_BUILDS.
+  unrs-resolver: false
