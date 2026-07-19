@@ -1,14 +1,14 @@
 {
   "name": "@thuanpanda/bv",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "Bavaan internal CLI — skills, tools, and more",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ThuanPanda/bav-ai-labs.git"
+    "url": "git+https://github.com/ThuanPanda/bav-ai-labs.git"
   },
   "bin": {
-    "bv": "./dist/index.js"
+    "bv": "dist/index.js"
   },
   "scripts": {
     "build": "tsup",
