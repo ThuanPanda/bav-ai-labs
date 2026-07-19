@@ -22,6 +22,11 @@ const boilerplates: Boilerplate[] = [
     label: 'Next.js',
     description: 'Next.js 16 + React 19 + TypeScript + Tailwind CSS',
   },
+  {
+    name: 'react-vite',
+    label: 'React (Vite)',
+    description: 'Vite + React 19 + TanStack Router + TypeScript + Tailwind CSS',
+  },
 ];
 
 // ─── PATHS ───────────────────────────────────────────────────────────────────
@@ -34,7 +39,7 @@ function getBoilerplateDir(name: string): string {
 
 // ─── COPY LOGIC ──────────────────────────────────────────────────────────────
 
-const SKIP_DIRS = new Set(['node_modules', '.next']);
+const SKIP_DIRS = new Set(['node_modules', '.next', 'dist']);
 
 function copyDir(src: string, dest: string): void {
   fs.mkdirSync(dest, { recursive: true });

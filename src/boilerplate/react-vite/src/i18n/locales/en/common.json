@@ -1,0 +1,13 @@
+{
+  "app": {
+    "name": "React Vite Starter"
+  },
+  "nav": {
+    "dashboard": "Dashboard"
+  },
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete"
+  }
+}
