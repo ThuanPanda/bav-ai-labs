@@ -33,6 +33,7 @@ export default defineConfig([
     onSuccess() {
       copyDir('src/skills', 'dist/skills');
       copyDir('src/boilerplate', 'dist/boilerplate', new Set(['node_modules', '.next']));
+      copyDir('src/registry', 'dist/registry', new Set(['node_modules', '.next']));
     },
   },
 ]);

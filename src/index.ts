@@ -6,6 +6,7 @@ import { Command } from 'commander';
 
 import { addCommand } from './commands/add';
 import { infoCommand } from './commands/info';
+import { initCommand } from './commands/init';
 import { lsCommand } from './commands/ls';
 import { newCommand } from './commands/new';
 import { uninstallCommand } from './commands/uninstall';
@@ -30,6 +31,7 @@ program
 program.addCommand(lsCommand);
 program.addCommand(addCommand);
 program.addCommand(newCommand);
+program.addCommand(initCommand);
 program.addCommand(upCommand);
 program.addCommand(infoCommand);
 program.addCommand(updateCommand);
