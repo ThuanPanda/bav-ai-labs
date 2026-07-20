@@ -20,7 +20,8 @@ vi.mock('conf', () => ({
 
 // ─── Mock @inquirer/prompts ───────────────────────────────────────────────────
 const mockSelect = vi.fn();
-vi.mock('@inquirer/prompts', () => ({ select: mockSelect }));
+const mockCheckbox = vi.fn();
+vi.mock('@inquirer/prompts', () => ({ select: mockSelect, checkbox: mockCheckbox }));
 
 // ─── Mock child_process ───────────────────────────────────────────────────────
 const mockExecSync = vi.fn();
