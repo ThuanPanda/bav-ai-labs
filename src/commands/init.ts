@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,13 +31,13 @@ const bundles: RegistryBundle[] = [
 
 const ALL_COMPONENTS = '__all__';
 
-// The required npm dependencies for the ccep-components bundle, derived from
-// the actual imports in the copied files.
+/** Fallback full dep list when scanning fails or for docs. Keep in sync with registry imports. */
 const CCEP_COMPONENTS_DEPENDENCIES = [
   '@base-ui/react',
   'class-variance-authority',
   'clsx',
   'dayjs',
+  'embla-carousel-react',
   'lucide-react',
   'next-intl',
   'next-themes',
@@ -48,6 +49,9 @@ const CCEP_COMPONENTS_DEPENDENCIES = [
   'tailwind-merge',
   'use-debounce',
 ];
+
+/** Host-app peers — assumed present in a real Next.js project; never auto-installed. */
+const ASSUMED_PEER_PACKAGES = new Set(['react', 'react-dom', 'next']);
 
 // ─── PATHS ───────────────────────────────────────────────────────────────────
 
@@ -88,6 +92,22 @@ function copyFileToCwd(bundleSrc: string, absFile: string, cwd: string): void {
   fs.copyFileSync(absFile, dest);
 }
 
+function listSourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  if (!fs.existsSync(dir)) return out;
+
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (SKIP_DIRS.has(entry.name)) continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...listSourceFiles(full));
+    } else if (/\.(tsx?|jsx?)$/.test(entry.name)) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
 // ─── COMPONENT DISCOVERY & DEPS ──────────────────────────────────────────────
 
 function listUiComponents(bundleSrc: string): string[] {
@@ -106,12 +126,11 @@ function resolveLocalImport(fromFile: string, specifier: string, bundleSrc: stri
   let base: string | null = null;
 
   if (specifier.startsWith('@/')) {
-    // @/lib/utils → <bundle>/src/lib/utils
     base = path.join(bundleSrc, 'src', specifier.slice(2));
   } else if (specifier.startsWith('.')) {
     base = path.resolve(path.dirname(fromFile), specifier);
   } else {
-    return null; // external package
+    return null;
   }
 
   const candidates = [
@@ -127,7 +146,6 @@ function resolveLocalImport(fromFile: string, specifier: string, bundleSrc: stri
 
   for (const candidate of candidates) {
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
-      // Only track files that live inside the registry bundle
       const rel = path.relative(bundleSrc, candidate);
       if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
         return candidate;
@@ -165,10 +183,7 @@ function collectSelectedComponentFiles(bundleSrc: string, componentNames: string
   const uiDir = getUiDir(bundleSrc);
 
   for (const name of componentNames) {
-    const candidates = [
-      path.join(uiDir, `${name}.tsx`),
-      path.join(uiDir, `${name}.ts`),
-    ];
+    const candidates = [path.join(uiDir, `${name}.tsx`), path.join(uiDir, `${name}.ts`)];
     const entry = candidates.find((p) => fs.existsSync(p));
     if (!entry) {
       log.warn(`Component "${name}" not found — skipped.`);
@@ -178,6 +193,153 @@ function collectSelectedComponentFiles(bundleSrc: string, componentNames: string
   }
 
   return [...visited].sort();
+}
+
+// ─── NPM PACKAGE RESOLUTION & INSTALL ────────────────────────────────────────
+
+/** `dayjs/plugin/utc` → `dayjs`, `@scope/pkg/sub` → `@scope/pkg` */
+function packageNameFromSpecifier(specifier: string): string | null {
+  if (
+    specifier.startsWith('.') ||
+    specifier.startsWith('@/') ||
+    specifier.startsWith('node:') ||
+    specifier.startsWith('#')
+  ) {
+    return null;
+  }
+
+  if (specifier.startsWith('@')) {
+    const parts = specifier.split('/');
+    if (parts.length < 2) return null;
+    return `${parts[0]}/${parts[1]}`;
+  }
+
+  return specifier.split('/')[0] || null;
+}
+
+function collectNpmPackagesFromFiles(files: string[]): string[] {
+  const pkgs = new Set<string>();
+
+  for (const file of files) {
+    if (!/\.(tsx?|jsx?)$/.test(file) || !fs.existsSync(file)) continue;
+    const content = fs.readFileSync(file, 'utf8');
+    let match: RegExpExecArray | null;
+    IMPORT_RE.lastIndex = 0;
+    while ((match = IMPORT_RE.exec(content)) !== null) {
+      const name = packageNameFromSpecifier(match[1]);
+      if (name && !ASSUMED_PEER_PACKAGES.has(name)) {
+        pkgs.add(name);
+      }
+    }
+  }
+
+  return [...pkgs].sort();
+}
+
+interface ProjectPackageJson {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  packageManager?: string;
+}
+
+function readProjectPackageJson(cwd: string): ProjectPackageJson | null {
+  const pkgPath = path.join(cwd, 'package.json');
+  if (!fs.existsSync(pkgPath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as ProjectPackageJson;
+  } catch {
+    return null;
+  }
+}
+
+function getDeclaredPackages(pkg: ProjectPackageJson): Set<string> {
+  return new Set([
+    ...Object.keys(pkg.dependencies ?? {}),
+    ...Object.keys(pkg.devDependencies ?? {}),
+    ...Object.keys(pkg.peerDependencies ?? {}),
+    ...Object.keys(pkg.optionalDependencies ?? {}),
+  ]);
+}
+
+type PackageManager = 'pnpm' | 'npm' | 'yarn';
+
+function detectPackageManager(cwd: string, pkg: ProjectPackageJson | null): PackageManager {
+  if (pkg?.packageManager?.startsWith('pnpm')) return 'pnpm';
+  if (pkg?.packageManager?.startsWith('yarn')) return 'yarn';
+  if (pkg?.packageManager?.startsWith('npm')) return 'npm';
+  if (fs.existsSync(path.join(cwd, 'pnpm-lock.yaml'))) return 'pnpm';
+  if (fs.existsSync(path.join(cwd, 'yarn.lock'))) return 'yarn';
+  if (fs.existsSync(path.join(cwd, 'package-lock.json'))) return 'npm';
+  // Prefer pnpm (project convention / user request)
+  return 'pnpm';
+}
+
+function buildAddCommand(pm: PackageManager, packages: string[]): string {
+  const list = packages.join(' ');
+  switch (pm) {
+    case 'pnpm':
+      return `pnpm add ${list}`;
+    case 'yarn':
+      return `yarn add ${list}`;
+    case 'npm':
+      return `npm install ${list}`;
+  }
+}
+
+/**
+ * Install missing npm packages for the copied component files.
+ * Uses pnpm when available / preferred, falls back to yarn/npm by lockfile.
+ */
+function installMissingDependencies(cwd: string, requiredPackages: string[]): void {
+  if (requiredPackages.length === 0) {
+    log.info('No external packages required for the selected files.');
+    return;
+  }
+
+  const pkg = readProjectPackageJson(cwd);
+  if (!pkg) {
+    log.warn('No package.json in the current directory — skipped install.');
+    log.info(`Install manually: ${chalk.cyan(`pnpm add ${requiredPackages.join(' ')}`)}`);
+    return;
+  }
+
+  const declared = getDeclaredPackages(pkg);
+  const missing = requiredPackages.filter((p) => !declared.has(p));
+
+  if (missing.length === 0) {
+    log.success('All required packages are already listed in package.json.');
+    return;
+  }
+
+  const pm = detectPackageManager(cwd, pkg);
+  const cmd = buildAddCommand(pm, missing);
+
+  console.log();
+  log.info(`Installing ${chalk.bold(String(missing.length))} package(s) with ${chalk.cyan(pm)}:`);
+  log.label('Add', missing.join(', '));
+  console.log();
+
+  const spinner = spin(`Running ${chalk.dim(cmd)}…`);
+  try {
+    // Inherit stdio so the user sees install progress; spinner text still shows briefly.
+    spinner.stop();
+    execSync(cmd, {
+      cwd,
+      stdio: 'inherit',
+      encoding: 'utf8',
+      env: process.env,
+    });
+    console.log();
+    log.success(`Installed: ${chalk.cyan(missing.join(', '))}`);
+  } catch (error) {
+    console.log();
+    log.error(`Failed to install packages with ${pm}.`);
+    log.error((error as Error).message);
+    log.info(`Retry manually: ${chalk.cyan(cmd)}`);
+    process.exit(1);
+  }
 }
 
 // ─── PROMPTS ─────────────────────────────────────────────────────────────────
@@ -197,7 +359,6 @@ async function promptBundle(preselected?: string): Promise<RegistryBundle> {
   }
 
   console.log();
-  // checkbox: space to toggle, enter to submit — enforce exactly one bundle
   const chosen = await checkbox<string>({
     message: 'Which bundle do you want to init? (space to select, enter to submit)',
     choices: bundles.map((b) => ({
@@ -248,16 +409,18 @@ async function promptComponents(bundleSrc: string): Promise<string[] | typeof AL
 
 // ─── POST-COPY HINTS ─────────────────────────────────────────────────────────
 
-function printCcepHints(componentCount?: number): void {
+function printCcepHints(opts?: { fileCount?: number; packages?: string[] }): void {
   console.log();
-  if (componentCount !== undefined) {
-    log.success(`Copied ${chalk.bold(String(componentCount))} component file(s) (incl. deps).`);
+  if (opts?.fileCount !== undefined) {
+    log.success(`Copied ${chalk.bold(String(opts.fileCount))} component file(s) (incl. deps).`);
   }
-  log.info('Required dependencies (make sure these are installed):');
-  log.label('Deps', CCEP_COMPONENTS_DEPENDENCIES.join(', '));
+  if (opts?.packages && opts.packages.length > 0) {
+    log.info('Packages used by selected components:');
+    log.label('Deps', opts.packages.join(', '));
+  }
   console.log();
   log.info(
-    `This bundle assumes a Next.js project with ${chalk.cyan('next-intl')} (${chalk.dim('@/i18n/navigation')}, ${chalk.dim('@/i18n/routing')}) and a Tailwind/shadcn-style theme (CSS variables like ${chalk.dim('--background')}, ${chalk.dim('--primary')}, etc.) already set up — same as the ${chalk.cyan('nextjs')} boilerplate in this repo.`,
+    `This bundle assumes a Next.js project with ${chalk.cyan('next-intl')} routing and a Tailwind/shadcn-style theme (CSS variables like ${chalk.dim('--background')}, ${chalk.dim('--primary')}, etc.) — same as the ${chalk.cyan('nextjs')} boilerplate.`,
   );
   console.log();
 }
@@ -279,55 +442,64 @@ export const initCommand = new Command('init')
 
       const cwd = process.cwd();
 
-      // Component-level selection for bundles that support it
       let selection: string[] | typeof ALL_COMPONENTS = ALL_COMPONENTS;
       if (bundle.hasComponents) {
         selection = await promptComponents(srcDir);
       }
+
+      let copiedFiles: string[] = [];
 
       if (selection === ALL_COMPONENTS) {
         const spinner = spin(`Copying ${bundle.label} into ${chalk.dim(cwd)}`);
         try {
           copyDir(srcDir, cwd);
           spinner.succeed(`${chalk.bold.cyan(bundle.label)} copied successfully!`);
-          if (bundle.name === 'ccep-components') {
-            printCcepHints();
-          } else {
-            console.log();
-          }
+          copiedFiles = listSourceFiles(srcDir);
         } catch (error) {
           spinner.fail(`Failed to copy ${bundle.label}`);
           log.error((error as Error).message);
           process.exit(1);
         }
-        return;
-      }
-
-      // Selective component copy with transitive local deps
-      const files = collectSelectedComponentFiles(srcDir, selection);
-      if (files.length === 0) {
-        log.error('No files resolved for the selected components.');
-        process.exit(1);
-      }
-
-      const spinner = spin(
-        `Copying ${chalk.bold(String(selection.length))} component(s) into ${chalk.dim(cwd)}`,
-      );
-      try {
-        for (const file of files) {
-          copyFileToCwd(srcDir, file, cwd);
+      } else {
+        copiedFiles = collectSelectedComponentFiles(srcDir, selection);
+        if (copiedFiles.length === 0) {
+          log.error('No files resolved for the selected components.');
+          process.exit(1);
         }
-        spinner.succeed(
-          `${chalk.bold.cyan(selection.join(', '))} installed (${files.length} file(s))`,
+
+        const spinner = spin(
+          `Copying ${chalk.bold(String(selection.length))} component(s) into ${chalk.dim(cwd)}`,
         );
-        printCcepHints(files.length);
-      } catch (error) {
-        spinner.fail('Failed to copy selected components');
-        log.error((error as Error).message);
-        process.exit(1);
+        try {
+          for (const file of copiedFiles) {
+            copyFileToCwd(srcDir, file, cwd);
+          }
+          spinner.succeed(
+            `${chalk.bold.cyan(selection.join(', '))} installed (${copiedFiles.length} file(s))`,
+          );
+        } catch (error) {
+          spinner.fail('Failed to copy selected components');
+          log.error((error as Error).message);
+          process.exit(1);
+        }
+      }
+
+      // Install npm packages required by the copied files
+      if (bundle.name === 'ccep-components') {
+        const npmPackages = collectNpmPackagesFromFiles(copiedFiles);
+        // Prefer scanned packages; fall back to full list if scan is empty (shouldn't happen)
+        const required =
+          npmPackages.length > 0 ? npmPackages : [...CCEP_COMPONENTS_DEPENDENCIES].sort();
+
+        installMissingDependencies(cwd, required);
+        printCcepHints({
+          fileCount: selection === ALL_COMPONENTS ? undefined : copiedFiles.length,
+          packages: required,
+        });
+      } else {
+        console.log();
       }
     } catch (error) {
-      // User cancelled prompt (Ctrl+C) or unexpected error
       if ((error as Error).name === 'ExitPromptError') {
         console.log();
         log.warn('Cancelled.');
