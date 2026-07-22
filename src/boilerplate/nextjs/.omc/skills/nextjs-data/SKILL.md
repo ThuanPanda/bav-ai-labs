@@ -193,3 +193,6 @@ export function useUserActions() {
 
 - `queryKey` drives cache — changing URL params automatically triggers refetch when params are in the key
 - Error toasts and 401 redirects are handled by `apiClient` interceptor — don't duplicate
+## Agent Skill Synchronization
+
+Follow [SKILL-SYNC.md](../../../SKILL-SYNC.md) whenever creating or changing this skill. Keep the same folder name and identical `SKILL.md` content in `.github/skills/`, `.claude/skills/`, `.codex/skills/`, and `.omc/skills/` so Copilot, Claude Code, Codex, and OpenCode stay synchronized.

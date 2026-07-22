@@ -138,3 +138,6 @@ When implementing from designs, **do not chase exact pixels**:
 - Every component that fetches data **must** have a sibling `*-skeleton.tsx`
 - Responsive grid example: `grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3`
 - Add i18n keys to both `src/messages/en.json` and `src/messages/de.json`
+## Agent Skill Synchronization
+
+Follow [SKILL-SYNC.md](../../../SKILL-SYNC.md) whenever creating or changing this skill. Keep the same folder name and identical `SKILL.md` content in `.github/skills/`, `.claude/skills/`, `.codex/skills/`, and `.omc/skills/` so Copilot, Claude Code, Codex, and OpenCode stay synchronized.

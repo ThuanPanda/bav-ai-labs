@@ -137,3 +137,6 @@ When no existing token fits (e.g. "success", "warning"):
 // ✗ Inline style
 <div style={{ backgroundColor: '#fff' }} />
 ```
+## Agent Skill Synchronization
+
+Follow [SKILL-SYNC.md](../../../SKILL-SYNC.md) whenever creating or changing this skill. Keep the same folder name and identical `SKILL.md` content in `.github/skills/`, `.claude/skills/`, `.codex/skills/`, and `.omc/skills/` so Copilot, Claude Code, Codex, and OpenCode stay synchronized.

@@ -1,6 +1,6 @@
 {
   "name": "@thuanpanda/bv",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "description": "Bavaan internal CLI — skills, tools, and more",
   "type": "module",
   "repository": {

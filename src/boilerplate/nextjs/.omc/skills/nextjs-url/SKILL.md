@@ -120,3 +120,6 @@ export function useUserPage() {
 - Multi-select filters: use `parseAsArrayOf(parseAsString)` — nuqs handles comma-encoding automatically
 - Sort: encode as `fieldName:asc` or `fieldName:desc`, parse with `.split(':')`
 - Avoid persisting params that equal their default — `nuqs` omits defaults from the URL automatically
+## Agent Skill Synchronization
+
+Follow [SKILL-SYNC.md](../../../SKILL-SYNC.md) whenever creating or changing this skill. Keep the same folder name and identical `SKILL.md` content in `.github/skills/`, `.claude/skills/`, `.codex/skills/`, and `.omc/skills/` so Copilot, Claude Code, Codex, and OpenCode stay synchronized.
