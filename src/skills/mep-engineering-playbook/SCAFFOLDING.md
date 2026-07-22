@@ -299,7 +299,7 @@ Before committing:
 - [ ] Every class has a JSDoc `@description` and `@type` comment.
 - [ ] Every public method has a JSDoc comment with `@param`, `@returns`, and `@throws` where applicable.
 - [ ] No repository is injected directly (always via token: `@Inject(ARTICLE_REPOSITORY)`).
-- [ ] No `new Error()` or `new HttpException()` — only project-defined error classes.
+- [ ] No `new Error()` or `new HttpException()`; exceptions carry a module error-key constant (`<MODULE>_ERRORS.KEY`), never a raw string.
 - [ ] No raw transport responses — only `OK(...)` / `CREATED(...)` or equivalent helpers.
 - [ ] All i18n messages use `await i18n.t(CONSTANT_KEY)` — no hardcoded strings.
 - [ ] Entry point contains zero business logic.

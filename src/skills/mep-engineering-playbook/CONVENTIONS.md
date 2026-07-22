@@ -1,4 +1,4 @@
-# Conventions — Naming, File Structure & JSDoc
+# Conventions — Naming, File Structure & Comments
 
 ## Table of contents
 
@@ -7,7 +7,7 @@
 3. [Class naming](#3-class-naming)
 4. [Variable and property naming](#4-variable-and-property-naming)
 5. [Barrel exports (`index.ts`)](#5-barrel-exports-indexts)
-6. [JSDoc format](#6-jsdoc-format)
+6. [Comments](#6-comments)
 7. [Import order](#7-import-order)
 
 ---
@@ -168,101 +168,36 @@ The module file imports handler _classes_ (not command message classes) by name.
 
 ---
 
-## 6. JSDoc format
+## 6. Comments
 
-Every **class** and every **public method** must have a JSDoc block.
+**Do not add comments that restate the code.** Names and type signatures already say what a class,
+method, DTO, interface, type, or field _is_. Do **not** add `@description`/JSDoc blocks or inline
+comments to classes, handlers, controllers, repositories, providers, modules, DTOs, interfaces,
+types, or fields just to paraphrase their names.
 
-### Class JSDoc
+Add a comment **only** to explain complex, non-obvious business logic — a rule, an edge case, or a
+"why" that is not evident from the code itself. Keep it short and place it next to the logic it
+explains.
 
 ```typescript
+// ✗ WRONG — restates the code / names
 /**
- * @description Short description of what this class does.
- * @type {Repository|Service|Controller|CommandHandler|QueryHandler|Command|Query}
+ * @description Handles the AddProductToEventCommand.
+ * @type {CommandHandler}
  */
+@CommandHandler(AddProductToEventCommand)
+export class AddProductToEventHandler { ... }
+
+/** Injection token for the event-draft-cart repository. */
+export const EVENT_DRAFT_CARTS_REPOSITORY = Symbol('EVENT_DRAFT_CARTS_REPOSITORY');
 ```
 
-### Method JSDoc
-
-Full format (use sections that apply; omit sections that don't):
-
 ```typescript
-/**
- * @description What this method does and when to use it.
- * @type {Repository|Service|Controller|CommandHandler|QueryHandler}
- * ---
- * @param {Type} paramName - What this parameter represents.
- * @param {Type} paramName2 - What this parameter represents.
- * ---
- * @returns {Promise<Type>} What the return value represents.
- * ---
- * @throws {ProjectDefinedErrorClass} When this error is thrown.
- */
-```
-
-Rules:
-
-- Use `---` as a separator between the `@param`, `@returns`, and `@throws` sections.
-- The `@type` tag describes the architectural layer: `Repository`, `Service`, `Controller`,
-  `CommandHandler`, `QueryHandler`, `Command`, or `Query`.
-- Always `await` `i18n.t(...)` calls — document the i18n key in the method if relevant.
-- For `@throws`, only list project-defined error classes (never `Error` or `HttpException`).
-
-### Examples
-
-**Repository method:**
-
-```typescript
-/**
- * @description Finds an article by its primary key.
- * @type {Repository}
- * ---
- * @param {string} id - The article's UUID.
- * ---
- * @returns {Promise<ArticleSelect | null>} The article record, or `null` if not found.
- */
-async findById(id: string): Promise<ArticleSelect | null> { ... }
-```
-
-**Service method:**
-
-```typescript
-/**
- * @description
- * Publishes an article and notifies subscribers.
- * Flow:
- *  1. Validates the article exists and belongs to the user.
- *  2. Updates status to 'published'.
- *  3. Emits 'article.published' event.
- * @type {Service}
- * ---
- * @param {PublishArticleCommandProps} props - Publish parameters.
- * ---
- * @returns {Promise<void>}
- * ---
- * @throws {Api404HttpError} If the article is not found.
- * @throws {Api403HttpError} If the user does not own the article.
- */
-async publish(props: PublishArticleCommandProps): Promise<void> { ... }
-```
-
-**Controller method:**
-
-```typescript
-/**
- * @description
- * Endpoint to publish an article.
- * Delegates logic to {@link PublishArticleHandler}.
- * @type {Controller}
- * ---
- * @param {string} id - Article ID from the URL param.
- * @param {string} userId - Authenticated user ID.
- * @param {I18nContext} i18n - Translations context.
- * ---
- * @returns {Promise<void>} Sends 200 OK response.
- * ---
- * @see PublishArticleHandler.execute
- */
-async publishArticle(...) { ... }
+// ✓ RIGHT — explains a non-obvious business rule
+// Line items span the full setup→teardown window by default. A virtual/rental product not booked
+// for the entire rental period instead follows the event's own start/end dates.
+const useEventPeriod =
+  (item.productType === 'virtual' || item.productType === 'rental') && !item.isRentEntirePeriod;
 ```
 
 ---

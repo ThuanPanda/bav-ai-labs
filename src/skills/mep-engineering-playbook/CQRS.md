@@ -14,6 +14,7 @@
    - 3.3 [Pagination query](#33-pagination-query)
 4. [When to use a Service vs Repository directly](#4-when-to-use-a-service-vs-repository-directly)
 5. [Handler barrel exports](#5-handler-barrel-exports)
+6. [Keep `execute()` thin](#6-keep-execute-thin)
 
 ---
 
@@ -97,7 +98,8 @@ export class CreateArticleHandler implements ICommandHandler<CreateArticleComman
 }
 ```
 
-**Complex handler** — delegates to a Service (multiple repos, transactions, or external calls):
+**Handler reusing a shared Service helper** — delegate to a Service *only* when the logic is
+shared across multiple handlers (otherwise keep the logic in the handler itself):
 
 ```typescript
 // commands/publish-article/publish-article.command.ts
@@ -299,18 +301,29 @@ export class GetArticlesHandler implements IQueryHandler<GetArticlesQuery> {
 
 ---
 
-## 4. When to use a Service vs Repository directly
+## 4. When to use a Service vs keep logic in the handler
 
-| Scenario                                                     | Use                 |
-| ------------------------------------------------------------ | ------------------- |
-| Single repository call, no external I/O, no transactions     | Repository directly |
-| Multiple repositories                                        | Service             |
-| Requires a database transaction (`tx`)                       | Service             |
-| Calls an external API / queue / event emitter                | Service             |
-| Cross-domain logic (e.g. permission check + record creation) | Service             |
+**The deciding question is "is this logic shared across handlers?" — not "is this logic complex?"**
 
-**Service placement rule:** place the method in the Service whose **domain matches the action**,
-not the service that owns the "primary" repository.
+A handler owns its own business logic. It may inject repositories (via `@Inject(TOKEN)`), the DB
+provider, and Services directly — including handlers that open transactions, touch multiple
+repositories, or call external APIs. Do **not** push handler-specific logic into a Service just
+because it is long or multi-step.
+
+Move a method into a Service **only** when two or more handlers genuinely reuse it.
+
+| Scenario                                                          | Use                          |
+| ---------------------------------------------------------------- | ---------------------------- |
+| Logic used by exactly one handler (even if it spans repos / tx / external calls) | Keep it in that handler      |
+| A helper genuinely reused by two or more handlers                | Extract to a Service         |
+| A private "find-or-throw" / utility used by a single handler     | Private method on the handler |
+| The same private "find-or-throw" / utility used by many handlers | Public method on a Service   |
+
+> A handler may still inject a Service to call its **shared** helpers (e.g.
+> `this.eventService.resolveCoordinates(...)`) while keeping the rest of the step's logic local.
+
+**Service placement rule:** when shared logic spans multiple repositories, place the method in the
+Service whose **domain matches the action**, not the service that owns the "primary" repository.
 
 ```
 // WRONG — getPermissionsByUserId does NOT belong in UserService just because
@@ -349,4 +362,50 @@ The module file imports handler _classes_ (not the command classes) into its han
 import { CreateArticleHandler, PublishArticleHandler } from './commands';
 
 const CommandHandlers = [CreateArticleHandler, PublishArticleHandler];
+```
+
+---
+
+## 6. Keep `execute()` thin
+
+`execute()` is the orchestration entry point — it should read as a short, top-level outline of the
+step. Extract each distinct piece of logic into its own small, well-named private method (still on
+the handler — this is not a reason to reach for a Service, see §4) and have `execute()` call them.
+Someone reading `execute()` should understand the flow from the method names alone, without wading
+through the details.
+
+Extract when a block does one nameable thing: building/shaping a response slice, resolving or
+validating an input, mapping rows, applying a business rule. Inline only trivial one-liners.
+
+```typescript
+// ✗ WRONG — one long execute() the reader must parse line by line
+async execute(query: GetEventDetailQuery) {
+  // ...fetch...
+  return {
+    ...(wantOverview && { overview: { ...event, images: this.resolveUrls(event.images) } }),
+    ...(wantLogistics && {
+      logistics: logistics && {
+        ...logistics,
+        venueLayouts: this.resolveUrls(logistics.venueLayouts),
+        eventDocuments: this.resolveUrls(logistics.eventDocuments),
+        // ...more inline shaping...
+      },
+    }),
+  };
+}
+
+// ✓ RIGHT — execute() reads as an outline; each step is a named method
+async execute(query: GetEventDetailQuery) {
+  // ...fetch...
+  return {
+    ...(wantOverview && { overview: this.buildOverview(event) }),
+    ...(wantLogistics && { logistics: this.buildLogistics(logistics) }),
+    ...(wantHelping && { helpingHands: this.buildHelpingHands(helpingHands) }),
+  };
+}
+
+private buildOverview(event: EventSelect) {
+  return { ...event, images: this.resolveUrls(event.images) };
+}
+// buildLogistics(...), buildHelpingHands(...), resolveUrls(...) alongside.
 ```

@@ -1,6 +1,6 @@
 ---
 name: mep-engineering-playbook
-version: 1.0.0
+version: 1.1.0
 description: >
   Mandatory engineering playbook for all NestJS CQRS microservice projects at MEP. Every
   agent MUST read and strictly follow the conventions in this playbook before writing any
@@ -9,8 +9,9 @@ description: >
   of truth for code structure, patterns, and style across all MEP projects. Entry points
   may be HTTP controllers, message pattern handlers, gRPC methods, or WebSocket gateways
   depending on the project transport. Success responses MUST use the project-defined
-  response helpers. Errors MUST be thrown using the project-defined error classes — never
-  throw raw Error or HttpException.
+  response helpers. Errors MUST be thrown with a NestJS HTTP exception carrying a module
+  error-key constant (`<MODULE>_ERRORS.KEY`) — never a raw string, and never raw Error or
+  HttpException.
 ---
 
 # MEP Engineering Playbook
@@ -23,10 +24,12 @@ Mandatory conventions guide for all NestJS CQRS microservice projects.
 | Topic                                    | File                                 |
 | ---------------------------------------- | ------------------------------------ |
 | CQRS — Commands & Queries                | [CQRS.md](./CQRS.md)                 |
-| Repository pattern (Drizzle / Prisma)    | [REPOSITORIES.md](./REPOSITORIES.md) |
+| Repository pattern + `libs/layer-data`   | [REPOSITORIES.md](./REPOSITORIES.md) |
+| Drizzle schema — tables, FKs, relations  | [SCHEMA.md](./SCHEMA.md)             |
 | Entry points, responses & error handling | [API-DESIGN.md](./API-DESIGN.md)     |
 | Scaffolding a new module (step-by-step)  | [SCAFFOLDING.md](./SCAFFOLDING.md)   |
 | Naming, file structure, JSDoc            | [CONVENTIONS.md](./CONVENTIONS.md)   |
+| Swagger setup & OpenAPI documentation    | [SWAGGER.md](./SWAGGER.md)           |
 
 ---
 
@@ -37,32 +40,43 @@ Every feature module follows the **CQRS + Repository** pattern regardless of tra
 ```
 Incoming request (HTTP / Message / gRPC / WebSocket)
     └─► Entry point        (dispatch only — no business logic)
-            ├─► CommandBus ─► CommandHandler ─┬─► Repository  (simple: single repo, no complex logic)
-            │                                  └─► Service ──► Repository / Repositories
-            └─► QueryBus   ─► QueryHandler   ─┬─► Repository  (simple: single repo, no complex logic)
-                                               └─► Service ──► Repository / Repositories
+            ├─► CommandBus ─► CommandHandler ─┬─► Repository / Repositories (owns its own logic)
+            │                                  └─► Service ──► (only logic SHARED across handlers)
+            └─► QueryBus   ─► QueryHandler   ─┬─► Repository / Repositories (owns its own logic)
+                                               └─► Service ──► (only logic SHARED across handlers)
 ```
 
 **Non-negotiable rules — violating any of these is a bug:**
 
 1. Entry points dispatch to `CommandBus` / `QueryBus` only. Never inject Services or
    Repositories into entry points.
-2. **Simple handlers** (single repository, no external calls, no transactions) may inject
-   and call a Repository directly via `@Inject(TOKEN)`.
-3. **Complex handlers** (multiple repositories, transactions, external calls, cross-domain
-   logic) must delegate to a **Service**.
-4. When logic spans multiple repositories, place the Service method in the Service whose
+2. **A handler owns its own business logic.** It may inject Repositories (via `@Inject(TOKEN)`),
+   the DB provider, and Services directly — including handlers with transactions, multiple
+   repositories, or external calls. Logic specific to a single handler lives **in that handler**,
+   not in a Service.
+3. **Services hold only logic SHARED across multiple handlers.** Extract a method into a Service
+   solely when two or more handlers need it (e.g. geocoding, address normalization, a common
+   "find-or-throw"). A Service is a library of reusable building blocks, not a mandatory layer a
+   handler must route through. Do not move handler-specific logic into a Service just because it
+   is long or touches several repositories.
+4. When **shared** logic spans multiple repositories, place the Service method in the Service whose
    **domain matches the action** — not the service that owns the "primary" repository.
    Example: `getPermissionsByUserId` → `PermissionService`, not `UserService`.
 5. Repositories only communicate with the database. No business logic inside repositories.
 6. Commands typically return `null`. They may return a simple scalar (e.g. `id`) when the
    caller needs it, but must never return full data objects.
 7. Repository injection always uses **provider token strings**, never direct class injection.
-8. Every class and public method must have a **JSDoc comment** — see [CONVENTIONS.md](./CONVENTIONS.md).
+8. **Do not add comments that restate the code.** Names and signatures already describe what a
+   class, method, DTO, interface, type, or field _is_ — never add a `@description`/JSDoc block or an
+   inline comment just to paraphrase them. Add a comment **only** to explain complex, non-obvious
+   business logic (a rule, an edge case, a "why"). See [CONVENTIONS.md](./CONVENTIONS.md).
 9. Success responses MUST use the project-defined response helpers — never write raw
    transport responses directly.
-10. Errors MUST be thrown using the project-defined error classes — never throw `new Error()`,
-    `new HttpException()`, or any other raw exception class directly.
+10. Errors MUST be thrown with a NestJS HTTP exception (`NotFoundException`,
+    `BadRequestException`, …) carrying a **module error-key constant**
+    (`<MODULE>_ERRORS.KEY` = `'<MODULE>.<REASON>'`) — never a human-readable string, and never
+    `new Error()` / `new HttpException()`. Keys live in
+    `<module>/constants/<module>-error.constants.ts`. See [API-DESIGN.md](./API-DESIGN.md) §8.
 
 ---
 
@@ -87,12 +101,14 @@ src/modules/<module>/
 │   ├── <module>.controller.ts         ← naming matches transport (controller / gateway / etc.)
 │   └── index.ts
 ├── dtos/                              ← class-validator input DTOs
-├── interfaces/                        ← Repository interfaces (extends BaseRepository)
-├── providers/                         ← Token constants + Provider objects
-├── repositories/                      ← Repository implementations
 ├── services/                          ← Complex business logic only
 └── constants/                         ← i18n keys, enums
 ```
+
+> **Repositories do NOT live in the feature module.** Interfaces, repositories, and providers
+> belong to the centralized **`libs/layer-data`** library (`@app/layer-data`). The feature module
+> imports a per-domain `*DataModule` and injects the repository token. See
+> [REPOSITORIES.md §0](./REPOSITORIES.md#0-data-layer-libslayer-data).
 
 > **Naming quirk** (established convention — do not change):
 > `*.command.ts` holds the `@CommandHandler` class; `*.handler.ts` holds the `ICommand`
@@ -107,10 +123,11 @@ src/modules/<module>/
 | -------------------------------------------------- | ----------------------------------------------------- |
 | Writing any command (create / update / delete)     | [CQRS.md](./CQRS.md)                                  |
 | Writing any query (read / list / get)              | [CQRS.md](./CQRS.md)                                  |
-| Deciding Service vs Repository in a handler        | [CQRS.md](./CQRS.md) — "When to use a Service"        |
+| Deciding what goes in a handler vs a Service        | [CQRS.md](./CQRS.md) — "When to use a Service"        |
 | Writing a repository or its interface              | [REPOSITORIES.md](./REPOSITORIES.md)                  |
 | Writing an entry point (any transport)             | [API-DESIGN.md](./API-DESIGN.md)                      |
 | Sending a success response                         | [API-DESIGN.md](./API-DESIGN.md) — "Response helpers" |
 | Throwing an error                                  | [API-DESIGN.md](./API-DESIGN.md) — "Error handling"   |
 | Creating a new module from scratch                 | [SCAFFOLDING.md](./SCAFFOLDING.md)                    |
-| Naming a file, class, variable, or writing a JSDoc | [CONVENTIONS.md](./CONVENTIONS.md)                    |
+| Naming a file, class, variable, or adding a comment | [CONVENTIONS.md](./CONVENTIONS.md)                   |
+| Defining a Drizzle table or FK column               | [SCHEMA.md](./SCHEMA.md)                              |

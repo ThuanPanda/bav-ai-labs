@@ -175,6 +175,30 @@ async getArticles(
 }
 ```
 
+#### Paginated response shape — `items` + `pagination` (not `data`)
+
+The repository / query returns an `OffsetResult<T>` whose array key is **`data`** (library type — do
+not rename it). The **response DTO** exposed to the client, however, must name the array **`items`**
+(matching how `ResponseInterceptor` wraps a bare array into `{ items: [...] }`) alongside
+**`pagination`** — **never** expose the list as `data`. Remap `data` → `items` in the entry point:
+
+```typescript
+// response DTO — expose `items` + `pagination`
+@Exclude()
+export class ArticleListResponse {
+  @Expose() @Type(() => ArticleListItemResponse) items: ArticleListItemResponse[];
+  @Expose() @Type(() => OffsetPaginationResponseDto) pagination: OffsetPaginationResponseDto;
+}
+
+// controller — destructure the OffsetResult's `data`, return it as `items`
+@Get()
+@Serialize(ArticleListResponse)
+async getArticles(@Query() query: GetArticlesDto) {
+  const { data, pagination } = await this.queryBus.execute(new GetArticlesQuery(query));
+  return { items: data, pagination };
+}
+```
+
 ---
 
 ## 3. Message pattern handler (microservice transport)
@@ -350,25 +374,69 @@ Return the value directly from the handler method; NestJS serialises it automati
 ## 8. Error handling
 
 **Never** throw `new Error(...)`, `new HttpException(...)`, or any generic exception class.
-Always use the project-defined error classes from `core/`.
+Throw a NestJS HTTP exception (`NotFoundException`, `BadRequestException`, `ForbiddenException`,
+`ConflictException`, …) and **pass an error-key constant — never a human-readable string.**
+The client receives the key and resolves the display text (i18n) on its side.
+
+### Error-key constants
+
+Each module owns its error keys in `<module>/constants/<module>-error.constants.ts`, exported as
+`<MODULE>_ERRORS`. The value is a namespaced key `'<MODULE>.<REASON>'` — never a sentence.
 
 ```typescript
-// Examples — use the class names defined in your project's core/errors/
-throw new Api400HttpError('Validation failed');
-throw new Api404HttpError('Article not found');
-throw new Api403HttpError('Forbidden');
-throw new Api409HttpError('Slug already exists');
-throw new Api500HttpError('Unexpected server error');
+// modules/article/constants/article-error.constants.ts
+export const ARTICLE_ERRORS = {
+  NOT_FOUND: 'ARTICLE.NOT_FOUND',
+  SLUG_ALREADY_EXISTS: 'ARTICLE.SLUG_ALREADY_EXISTS',
+  FORBIDDEN: 'ARTICLE.FORBIDDEN',
+} as const;
 ```
+
+Re-export it from `constants/index.ts` alongside the module's other constants.
+
+### Throwing
+
+```typescript
+import { ARTICLE_ERRORS } from '../constants';
+
+// ✅ pass the key constant
+if (!article) throw new NotFoundException(ARTICLE_ERRORS.NOT_FOUND);
+if (exists) throw new ConflictException(ARTICLE_ERRORS.SLUG_ALREADY_EXISTS);
+
+// ❌ never a raw string / interpolated message
+throw new NotFoundException('Article not found');
+throw new NotFoundException(`Article ${id} not found`);
+```
+
+> Because the key is static, dynamic values (an id, a SKU, a count) are **not** carried in the
+> message. Encode the reason in a distinct key instead of interpolating (e.g. a separate
+> `PRODUCT_INSUFFICIENT_QUANTITY` key rather than `` `Only ${n} left` ``).
 
 Throw these from Service methods or Repository methods when invariants are violated.
 Command/Query handlers may also throw them directly if there is no Service layer.
+
+> **Not touched by this rule:** the `throw new Error('Method not implemented.')` stubs on the
+> unused `BaseRepositoryV2` surface are internal placeholders, not API errors — leave them as-is.
 
 ---
 
 ## 9. Input DTOs
 
 DTOs live in `<module>/dtos/`. Use `class-validator` decorators for validation.
+
+> **Always value-import DTOs in entry points — never `import type`.**
+> A DTO bound with `@Body()`, `@Query()`, or `@Param()` must be a **runtime value import**:
+>
+> ```typescript
+> import { GetProductsDto } from '../dtos';        // ✅ correct
+> import type { GetProductsDto } from '../dtos';   // ❌ breaks Swagger + validation
+> ```
+>
+> `import type` is erased at compile time, so the `design:type` reflection metadata NestJS relies
+> on disappears. The result: **Swagger shows no params** for the DTO and **`ValidationPipe` silently
+> skips validation/transform** (no `metatype`). This project has no `@nestjs/swagger` CLI plugin, so
+> this metadata is the only source of truth. Reserve `import type` for pure types that never need
+> reflection (e.g. a query's `props` interface, response interfaces, generics).
 
 ```typescript
 // modules/article/dtos/create-article.dto.ts
