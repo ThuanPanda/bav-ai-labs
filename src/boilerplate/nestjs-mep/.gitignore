@@ -1,0 +1,27 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dependency directories
+node_modules/
+
+# Compiled output
+dist
+build
+
+# TypeScript cache
+*.tsbuildinfo
+
+# dotenv environment variable files (both the apps/*/.env layer and apps/*/venv/.env.<env>)
+# — but always keep the committed .env.example templates.
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+.vscode-test
+
+# claude
+.claude/settings.local.json

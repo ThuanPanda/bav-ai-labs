@@ -20,14 +20,14 @@ apps/<app>/src/modules/<module>/
 ├── commands/
 │   ├── index.ts
 │   └── <verb>-<noun>/
-│       ├── <verb>-<noun>.command.ts   ← @CommandHandler class (the executor)
-│       ├── <verb>-<noun>.handler.ts   ← ICommand class + Props interface (the message)
+│       ├── <verb>-<noun>.command.ts   ← Command message (extends Command<T>) + Props interface
+│       ├── <verb>-<noun>.handler.ts   ← @CommandHandler class (the executor)
 │       └── index.ts
 ├── queries/
 │   ├── index.ts
 │   └── <verb>-<noun>/
-│       ├── <verb>-<noun>.query.ts     ← IQuery class
-│       ├── <verb>-<noun>.handler.ts   ← @QueryHandler class
+│       ├── <verb>-<noun>.query.ts     ← Query message (extends Query<T>)
+│       ├── <verb>-<noun>.handler.ts   ← @QueryHandler class (the executor)
 │       └── index.ts
 ├── controllers/
 │   ├── index.ts
@@ -61,16 +61,17 @@ All file names use **kebab-case**.
 
 | File                       | Contains                                                                                    |
 | -------------------------- | ------------------------------------------------------------------------------------------- |
-| `<verb>-<noun>.handler.ts` | `interface <Verb><Noun>CommandProps` + `class <Verb><Noun>Command implements ICommand`      |
-| `<verb>-<noun>.command.ts` | `@CommandHandler(<Verb><Noun>Command) class <Verb><Noun>Handler implements ICommandHandler` |
+| `<verb>-<noun>.command.ts` | `interface <Verb><Noun>CommandProps` + `class <Verb><Noun>Command extends Command<TResult>` |
+| `<verb>-<noun>.handler.ts` | `@CommandHandler(<Verb><Noun>Command) class <Verb><Noun>Handler implements ICommandHandler` |
 
-> **Naming quirk (do not change):** `.handler.ts` holds the _message_; `.command.ts` holds the _executor_.
+> **File naming:** each file matches its content — `.command.ts` holds the _message_
+> (`extends Command<T>`); `.handler.ts` holds the _executor_ (`@CommandHandler`).
 
 ### Queries
 
 | File                       | Contains                                                                              |
 | -------------------------- | ------------------------------------------------------------------------------------- |
-| `<verb>-<noun>.query.ts`   | `class <Verb><Noun>Query implements IQuery`                                           |
+| `<verb>-<noun>.query.ts`   | `class <Verb><Noun>Query extends Query<TResult>`                                      |
 | `<verb>-<noun>.handler.ts` | `@QueryHandler(<Verb><Noun>Query) class <Verb><Noun>Handler implements IQueryHandler` |
 
 ### Other files (feature module)

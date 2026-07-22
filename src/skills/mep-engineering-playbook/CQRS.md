@@ -2,10 +2,10 @@
 
 ## Table of contents
 
-1. [File naming quirk](#1-file-naming-quirk)
+1. [File naming](#1-file-naming)
 2. [Commands](#2-commands)
-   - 2.1 [Command message file (`*.handler.ts`)](#21-command-message-file-handlerts)
-   - 2.2 [Command executor file (`*.command.ts`)](#22-command-executor-file-commandts)
+   - 2.1 [Command message file (`*.command.ts`)](#21-command-message-file-commandts)
+   - 2.2 [Command executor file (`*.handler.ts`)](#22-command-executor-file-handlerts)
    - 2.3 [Command that returns a scalar](#23-command-that-returns-a-scalar)
    - 2.4 [Command with a single primitive prop](#24-command-with-a-single-primitive-prop)
 3. [Queries](#3-queries)
@@ -18,30 +18,44 @@
 
 ---
 
-## 1. File naming quirk
+## 1. File naming
 
-> **This is an established convention. Never change it.**
+Each file's name matches what it holds — `*.command.ts` holds the Command, `*.handler.ts` holds the
+handler.
 
-| File                     | What it contains                                             |
-| ------------------------ | ------------------------------------------------------------ |
-| `*.handler.ts`           | `ICommand` class **and** its `Props` interface (the message) |
-| `*.command.ts`           | `@CommandHandler` class — the executor                       |
-| `*.query.ts`             | `IQuery` class (the message)                                 |
-| `*.handler.ts` (queries) | `@QueryHandler` class — the executor                         |
+| File                     | What it contains                                                   |
+| ------------------------ | ------------------------------------------------------------------ |
+| `*.command.ts`           | the `Command` message class (`extends Command<TResult>`) + `Props` |
+| `*.handler.ts`           | the `@CommandHandler` class — the executor                         |
+| `*.query.ts`             | the `Query` message class (`extends Query<TResult>`)               |
+| `*.handler.ts` (queries) | the `@QueryHandler` class — the executor                           |
 
-The names are **inverted** from what they suggest for commands. This is intentional and project-wide.
+### Message base classes — `Command<TResult>` / `Query<TResult>`
+
+Message classes **extend** `Command<TResult>` / `Query<TResult>` (from `@nestjs/cqrs`, ≥ v10.2) —
+**not** the old `implements ICommand` / `implements IQuery` markers. The generic `TResult` is the
+type the handler's `execute()` resolves to, so the bus infers it end-to-end:
+
+```typescript
+const id = await this.commandBus.execute(new CreateArticleCommand(props)); // id: string | null ✅
+```
+
+With the old `implements ICommand` marker the result was `any` unless you passed generics manually.
+Because these are base **classes**, any declared constructor must call `super()`.
 
 ---
 
 ## 2. Commands
 
-### 2.1 Command message file (`*.handler.ts`)
+### 2.1 Command message file (`*.command.ts`)
 
-`*.handler.ts` exports the Props interface and the `ICommand` class.
+`*.command.ts` exports the Props interface and the `Command` class. The `Command<TResult>` generic
+declares what the handler returns (commands usually resolve to `null` or a scalar `id` — never a
+full object).
 
 ```typescript
-// commands/create-article/create-article.handler.ts
-import type { ICommand } from '@nestjs/cqrs';
+// commands/create-article/create-article.command.ts
+import { Command } from '@nestjs/cqrs';
 
 export interface CreateArticleCommandProps {
   title: string;
@@ -49,27 +63,30 @@ export interface CreateArticleCommandProps {
   authorId: string;
 }
 
-export class CreateArticleCommand implements ICommand {
-  constructor(public readonly props: CreateArticleCommandProps) {}
+export class CreateArticleCommand extends Command<string | null> {
+  constructor(public readonly props: CreateArticleCommandProps) {
+    super();
+  }
 }
 ```
 
-> No JSDoc. The class and its Props interface already describe themselves — adding
-> `@description`/`@type` blocks that restate the name is forbidden (see [CONVENTIONS.md §6](./CONVENTIONS.md#6-comments)).
+> No JSDoc that restates the name. Add a comment only for non-obvious business logic
+> (see [CONVENTIONS.md §6](./CONVENTIONS.md#6-comments)).
 
-### 2.2 Command executor file (`*.command.ts`)
+### 2.2 Command executor file (`*.handler.ts`)
 
-`*.command.ts` is decorated with `@CommandHandler` and contains the execution logic.
+`*.handler.ts` is decorated with `@CommandHandler` and contains the execution logic. Its
+`execute()` return type must match the command's `Command<TResult>` generic.
 
 **Simple handler** — delegates to a Repository directly (single repo, no transactions):
 
 ```typescript
-// commands/create-article/create-article.command.ts
+// commands/create-article/create-article.handler.ts
 import { ARTICLE_REPOSITORY, type IArticleRepository } from '@app/layer-data';
 import { Inject } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
-import { CreateArticleCommand } from './create-article.handler';
+import { CreateArticleCommand } from './create-article.command';
 
 @CommandHandler(CreateArticleCommand)
 export class CreateArticleHandler implements ICommandHandler<CreateArticleCommand> {
@@ -78,9 +95,9 @@ export class CreateArticleHandler implements ICommandHandler<CreateArticleComman
     private readonly articleRepo: IArticleRepository,
   ) {}
 
-  async execute(command: CreateArticleCommand): Promise<null> {
-    await this.articleRepo.create(command.props);
-    return null;
+  async execute(command: CreateArticleCommand): Promise<string | null> {
+    const article = await this.articleRepo.create(command.props);
+    return article?.id ?? null;
   }
 }
 ```
@@ -93,11 +110,11 @@ export class CreateArticleHandler implements ICommandHandler<CreateArticleComman
 shared across multiple handlers (otherwise keep the logic in the handler itself):
 
 ```typescript
-// commands/publish-article/publish-article.command.ts
+// commands/publish-article/publish-article.handler.ts
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
 import { ArticleService } from '../../services';
-import { PublishArticleCommand } from './publish-article.handler';
+import { PublishArticleCommand } from './publish-article.command';
 
 @CommandHandler(PublishArticleCommand)
 export class PublishArticleHandler implements ICommandHandler<PublishArticleCommand> {
@@ -112,11 +129,20 @@ export class PublishArticleHandler implements ICommandHandler<PublishArticleComm
 
 ### 2.3 Command that returns a scalar
 
-Commands may return a simple scalar (e.g. the created record's `id`) when the caller needs it.
-They must **never** return full data objects.
+Commands may resolve to a simple scalar (e.g. the created record's `id`). Declare it in the
+`Command<TResult>` generic and return it from `execute()`. They must **never** return full objects.
 
 ```typescript
 // commands/create-article/create-article.command.ts
+export class CreateArticleCommand extends Command<string> {
+  constructor(public readonly props: CreateArticleCommandProps) {
+    super();
+  }
+}
+```
+
+```typescript
+// commands/create-article/create-article.handler.ts
 @CommandHandler(CreateArticleCommand)
 export class CreateArticleHandler implements ICommandHandler<CreateArticleCommand> {
   constructor(
@@ -134,20 +160,22 @@ export class CreateArticleHandler implements ICommandHandler<CreateArticleComman
 
 ### 2.4 Command with a single primitive prop
 
-When a command carries only one scalar value (e.g. `userId`), skip the Props interface and use a
+When a command carries only one scalar value (e.g. `articleId`), skip the Props interface and use a
 plain property directly.
 
 ```typescript
-// commands/delete-article/delete-article.handler.ts
-import type { ICommand } from '@nestjs/cqrs';
+// commands/delete-article/delete-article.command.ts
+import { Command } from '@nestjs/cqrs';
 
-export class DeleteArticleCommand implements ICommand {
-  constructor(public readonly articleId: string) {}
+export class DeleteArticleCommand extends Command<null> {
+  constructor(public readonly articleId: string) {
+    super();
+  }
 }
 ```
 
 ```typescript
-// commands/delete-article/delete-article.command.ts
+// commands/delete-article/delete-article.handler.ts
 @CommandHandler(DeleteArticleCommand)
 export class DeleteArticleHandler implements ICommandHandler<DeleteArticleCommand> {
   constructor(
@@ -156,7 +184,7 @@ export class DeleteArticleHandler implements ICommandHandler<DeleteArticleComman
   ) {}
 
   async execute(command: DeleteArticleCommand): Promise<null> {
-    // Single-prop commands: destructure directly from command, not from props
+    // Single-prop commands: read the property directly from command, not from props
     const { articleId } = command;
     await this.articleRepo.deleteById(articleId);
     return null;
@@ -170,12 +198,17 @@ export class DeleteArticleHandler implements ICommandHandler<DeleteArticleComman
 
 ### 3.1 Query message file (`*.query.ts`)
 
+Queries extend `Query<TResult>`, where `TResult` is the data the handler returns.
+
 ```typescript
 // queries/get-article/get-article.query.ts
-import type { IQuery } from '@nestjs/cqrs';
+import type { ArticleSelect } from '@app/database/types';
+import { Query } from '@nestjs/cqrs';
 
-export class GetArticleQuery implements IQuery {
-  constructor(public readonly id: string) {}
+export class GetArticleQuery extends Query<ArticleSelect | null> {
+  constructor(public readonly id: string) {
+    super();
+  }
 }
 ```
 
@@ -208,23 +241,28 @@ export class GetArticleHandler implements IQueryHandler<GetArticleQuery> {
 ### 3.3 Pagination query
 
 The query carries a `props` object (the DTO fields spread in, plus any auth context the handler
-needs); the repository's `findPaginated(params)` returns an `OffsetResult<T>` = `{ data, pagination }`.
-The handler may map each row before returning, but keeps the `{ data, pagination }` shape — the
-controller remaps `data` → `items` (see [API-DESIGN.md §2.3](./API-DESIGN.md#23-pagination-endpoint)).
+needs); the repository's `findPaginated(params)` returns an `OffsetResult<T>` = `{ data, pagination }`,
+which is also the query's `TResult`. The handler may map each row before returning, but keeps the
+`{ data, pagination }` shape — the controller remaps `data` → `items` (see
+[API-DESIGN.md §2.3](./API-DESIGN.md#23-pagination-endpoint)).
 
 ```typescript
 // queries/get-articles/get-articles.query.ts
-import type { IQuery } from '@nestjs/cqrs';
+import type { ArticleSelect } from '@app/database/types';
+import { Query } from '@nestjs/cqrs';
+import type { OffsetResult, RoleKey } from '@prowerbdigital/common';
+
 import type { GetArticlesDto } from '../../dtos';
-import type { RoleKey } from '@prowerbdigital/common';
 
 export interface GetArticlesQueryProps extends GetArticlesDto {
   currentUserId: string;
   roleKey: RoleKey;
 }
 
-export class GetArticlesQuery implements IQuery {
-  constructor(public readonly props: GetArticlesQueryProps) {}
+export class GetArticlesQuery extends Query<OffsetResult<ArticleSelect>> {
+  constructor(public readonly props: GetArticlesQueryProps) {
+    super();
+  }
 }
 ```
 
@@ -295,8 +333,8 @@ Every command/query directory has an `index.ts` re-export, and the parent `comma
 
 ```typescript
 // commands/create-article/index.ts
-export * from './create-article.handler';
 export * from './create-article.command';
+export * from './create-article.handler';
 ```
 
 ```typescript

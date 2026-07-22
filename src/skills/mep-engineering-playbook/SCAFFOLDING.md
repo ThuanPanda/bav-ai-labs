@@ -106,8 +106,8 @@ See [API-DESIGN.md §3](./API-DESIGN.md#3-response-dtos--serialization).
 
 For each command, `commands/<verb>-<noun>/` with three files:
 
-- **`<verb>-<noun>.handler.ts`** — `Props` interface + `<Verb><Noun>Command implements ICommand`.
-- **`<verb>-<noun>.command.ts`** — `@CommandHandler` executor; inject repo tokens from `@app/layer-data`.
+- **`<verb>-<noun>.command.ts`** — `Props` interface + `<Verb><Noun>Command extends Command<TResult>`.
+- **`<verb>-<noun>.handler.ts`** — `@CommandHandler` executor; inject repo tokens from `@app/layer-data`.
 - **`index.ts`** — barrel re-export of both.
 
 Add the executor class to `commands/index.ts`. See [CQRS.md §2](./CQRS.md#2-commands).
@@ -118,7 +118,7 @@ Add the executor class to `commands/index.ts`. See [CQRS.md §2](./CQRS.md#2-com
 
 For each query, `queries/<verb>-<noun>/` with three files:
 
-- **`<verb>-<noun>.query.ts`** — `<Verb><Noun>Query implements IQuery`.
+- **`<verb>-<noun>.query.ts`** — `<Verb><Noun>Query extends Query<TResult>`.
 - **`<verb>-<noun>.handler.ts`** — `@QueryHandler` executor.
 - **`index.ts`** — barrel re-export.
 
@@ -201,4 +201,4 @@ Before committing:
       ([CONVENTIONS.md §6](./CONVENTIONS.md#6-comments)).
 - [ ] Entry point contains zero business logic.
 - [ ] All barrel `index.ts` files export what consumers need.
-- [ ] File naming: `*.handler.ts` = command message / `*.command.ts` = command executor.
+- [ ] File naming: `*.command.ts` = command message (`extends Command<T>`) / `*.handler.ts` = command executor.

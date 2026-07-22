@@ -1,6 +1,6 @@
 ---
 name: mep-engineering-playbook
-version: 1.2.0
+version: 1.3.0
 description: >
   Mandatory engineering playbook for all NestJS CQRS microservice projects at MEP. Every
   agent MUST read and strictly follow the conventions in this playbook before writing any
@@ -100,14 +100,14 @@ apps/<app>/src/modules/<module>/
 ├── <module>.module.ts
 ├── commands/
 │   ├── <verb>-<noun>/
-│   │   ├── <verb>-<noun>.command.ts   ← @CommandHandler class (the executor)
-│   │   ├── <verb>-<noun>.handler.ts   ← ICommand class + Props interface (the message)
+│   │   ├── <verb>-<noun>.command.ts   ← Command message (extends Command<T>) + Props interface
+│   │   ├── <verb>-<noun>.handler.ts   ← @CommandHandler class (the executor)
 │   │   └── index.ts
 │   └── index.ts
 ├── queries/
 │   ├── <verb>-<noun>/
-│   │   ├── <verb>-<noun>.query.ts     ← IQuery class
-│   │   ├── <verb>-<noun>.handler.ts   ← @QueryHandler class
+│   │   ├── <verb>-<noun>.query.ts     ← Query message (extends Query<T>)
+│   │   ├── <verb>-<noun>.handler.ts   ← @QueryHandler class (the executor)
 │   │   └── index.ts
 │   └── index.ts
 ├── controllers/                       ← HTTP controllers (or gateways / message handlers)
@@ -124,10 +124,12 @@ apps/<app>/src/modules/<module>/
 > imports a per-domain `*DataModule` and injects the repository token. See
 > [REPOSITORIES.md §0](./REPOSITORIES.md#0-data-layer-libslayer-data).
 
-> **Naming quirk** (established convention — do not change):
-> `*.command.ts` holds the `@CommandHandler` class; `*.handler.ts` holds the `ICommand`
-> class and its Props interface. This is inverted from what the names suggest but is the
-> project standard — follow it exactly.
+> **File naming** — each file matches its content:
+> `*.command.ts` holds the `Command` message class (`extends Command<TResult>`) and its `Props`
+> interface; `*.handler.ts` holds the `@CommandHandler` executor. Queries mirror this:
+> `*.query.ts` holds the `Query` message (`extends Query<TResult>`), `*.handler.ts` the
+> `@QueryHandler`. Message classes extend the `Command<T>` / `Query<T>` base classes from
+> `@nestjs/cqrs` (not the legacy `implements ICommand` / `IQuery`) — see [CQRS.md](./CQRS.md).
 
 ---
 

@@ -3,8 +3,10 @@ import path from 'node:path';
 
 import { defineConfig } from 'tsup';
 
-/** Recursively copy src → dest, mirroring directory structure. */
+/** Recursively copy src → dest, mirroring directory structure. Wipes dest first so
+ *  renamed/removed bundled files never linger in dist (and thus in the published package). */
 function copyDir(src: string, dest: string, skip?: Set<string>): void {
+  fs.rmSync(dest, { recursive: true, force: true });
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     if (skip?.has(entry.name)) continue;
