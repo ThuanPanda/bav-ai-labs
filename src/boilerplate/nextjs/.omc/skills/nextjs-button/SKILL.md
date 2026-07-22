@@ -116,3 +116,6 @@ Every submit or delete button that triggers a mutation **must** show loading sta
 // ✓ Correct
 <Button variant="default" size="lg">Submit</Button>
 ```
+## Agent Skill Synchronization
+
+Follow [SKILL-SYNC.md](../../../SKILL-SYNC.md) whenever creating or changing this skill. Keep the same folder name and identical `SKILL.md` content in `.github/skills/`, `.claude/skills/`, `.codex/skills/`, and `.omc/skills/` so Copilot, Claude Code, Codex, and OpenCode stay synchronized.

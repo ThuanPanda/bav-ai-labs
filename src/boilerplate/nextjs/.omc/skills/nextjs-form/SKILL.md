@@ -140,3 +140,6 @@ export function PersonalInfoStep() {
 - `useTranslations` keys for error messages keep forms i18n-compatible
 - For dynamic field arrays use `useFieldArray` from react-hook-form — still logic-in-hooks
 - Conditional fields: use `watch()` in the hook and pass watched values to the component as props
+## Agent Skill Synchronization
+
+Follow [SKILL-SYNC.md](../../../SKILL-SYNC.md) whenever creating or changing this skill. Keep the same folder name and identical `SKILL.md` content in `.github/skills/`, `.claude/skills/`, `.codex/skills/`, and `.omc/skills/` so Copilot, Claude Code, Codex, and OpenCode stay synchronized.

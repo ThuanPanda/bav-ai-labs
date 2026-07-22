@@ -148,3 +148,6 @@ export function FeatureNameMainSkeleton() {
 - `loading.tsx` is **always required** alongside every `page.tsx`
 - **No `(types)/` folder** — types go inline where used
 - **1 component per file** — never define multiple exported components in one file
+## Agent Skill Synchronization
+
+Follow [SKILL-SYNC.md](../../../SKILL-SYNC.md) whenever creating or changing this skill. Keep the same folder name and identical `SKILL.md` content in `.github/skills/`, `.claude/skills/`, `.codex/skills/`, and `.omc/skills/` so Copilot, Claude Code, Codex, and OpenCode stay synchronized.

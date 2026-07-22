@@ -114,3 +114,6 @@ Add keys to both `en.json` and `de.json` under `<feature>.detail.tab<Name>`.
 - ✅ `defaultValue` must match a `TabsTrigger value`
 - ❌ Never use `useState` to track active tab in page-level tabs
 - ❌ Never add `value` or `onValueChange` to `TabsUrl` — it manages them internally
+## Agent Skill Synchronization
+
+Follow [SKILL-SYNC.md](../../../SKILL-SYNC.md) whenever creating or changing this skill. Keep the same folder name and identical `SKILL.md` content in `.github/skills/`, `.claude/skills/`, `.codex/skills/`, and `.omc/skills/` so Copilot, Claude Code, Codex, and OpenCode stay synchronized.

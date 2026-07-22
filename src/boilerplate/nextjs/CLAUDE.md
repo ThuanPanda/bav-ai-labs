@@ -18,7 +18,7 @@
 
 ## Skills
 
-Use the `.omc/skills/` skill files for detailed implementation patterns:
+Use the `.claude/skills/` skill files for detailed implementation patterns. They are kept in sync with the Copilot, Codex, and OpenCode copies; follow [SKILL-SYNC.md](SKILL-SYNC.md) whenever creating or changing a skill.
 
 | Skill              | When to invoke                               |
 | ------------------ | -------------------------------------------- |

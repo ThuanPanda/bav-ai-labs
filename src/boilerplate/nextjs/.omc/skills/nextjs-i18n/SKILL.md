@@ -140,3 +140,6 @@ featureName.confirm.delete     → Confirmation dialog text
 // ✗ Inline validation message
 z.string().min(1, 'Name is required')  // → use translation key instead
 ```
+## Agent Skill Synchronization
+
+Follow [SKILL-SYNC.md](../../../SKILL-SYNC.md) whenever creating or changing this skill. Keep the same folder name and identical `SKILL.md` content in `.github/skills/`, `.claude/skills/`, `.codex/skills/`, and `.omc/skills/` so Copilot, Claude Code, Codex, and OpenCode stay synchronized.

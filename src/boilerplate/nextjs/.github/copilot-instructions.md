@@ -2,6 +2,8 @@
 
 ## Tech Stack
 
+For task-specific guidance, use the matching skill in `.github/skills/`. When adding or changing a skill, follow [../SKILL-SYNC.md](../SKILL-SYNC.md) to synchronize Copilot, Claude Code, Codex, and OpenCode copies.
+
 - **Framework**: Next.js 16 (App Router, React Compiler enabled, Turbopack default)
 - **Language**: TypeScript 5, React 19
 - **Data fetching**: TanStack Query v5 + Axios (`@/lib/api-client`)
