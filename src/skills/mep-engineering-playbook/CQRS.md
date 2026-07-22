@@ -41,23 +41,21 @@ The names are **inverted** from what they suggest for commands. This is intentio
 
 ```typescript
 // commands/create-article/create-article.handler.ts
-import { ICommand } from '@nestjs/cqrs';
+import type { ICommand } from '@nestjs/cqrs';
 
-/** Props for the CreateArticleCommand. */
 export interface CreateArticleCommandProps {
   title: string;
   body: string;
   authorId: string;
 }
 
-/**
- * @description Command message for creating a new article.
- * @type {Command}
- */
 export class CreateArticleCommand implements ICommand {
   constructor(public readonly props: CreateArticleCommandProps) {}
 }
 ```
+
+> No JSDoc. The class and its Props interface already describe themselves — adding
+> `@description`/`@type` blocks that restate the name is forbidden (see [CONVENTIONS.md §6](./CONVENTIONS.md#6-comments)).
 
 ### 2.2 Command executor file (`*.command.ts`)
 
@@ -67,63 +65,46 @@ export class CreateArticleCommand implements ICommand {
 
 ```typescript
 // commands/create-article/create-article.command.ts
+import { ARTICLE_REPOSITORY, type IArticleRepository } from '@app/layer-data';
 import { Inject } from '@nestjs/common';
-import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
+import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
-import { ARTICLE_REPOSITORY } from '../../providers';
-import { ArticleRepository } from '../../repositories';
 import { CreateArticleCommand } from './create-article.handler';
 
-/**
- * @description Handles the CreateArticleCommand. Persists the new article.
- * @type {CommandHandler}
- */
 @CommandHandler(CreateArticleCommand)
 export class CreateArticleHandler implements ICommandHandler<CreateArticleCommand> {
   constructor(
     @Inject(ARTICLE_REPOSITORY)
-    private readonly articleRepo: ArticleRepository,
+    private readonly articleRepo: IArticleRepository,
   ) {}
 
-  /**
-   * @description Executes the command. Creates the article and returns null.
-   * @param {CreateArticleCommand} command - The command instance.
-   * @returns {Promise<null>}
-   */
   async execute(command: CreateArticleCommand): Promise<null> {
-    const { props } = command;
-    await this.articleRepo.create(props);
+    await this.articleRepo.create(command.props);
     return null;
   }
 }
 ```
+
+> The repository **token** (`ARTICLE_REPOSITORY`) and its **interface** (`IArticleRepository`) both
+> come from `@app/layer-data` — never a local `../../providers` / `../../repositories` path (those
+> folders do not exist in a feature module; see [REPOSITORIES.md](./REPOSITORIES.md)).
 
 **Handler reusing a shared Service helper** — delegate to a Service *only* when the logic is
 shared across multiple handlers (otherwise keep the logic in the handler itself):
 
 ```typescript
 // commands/publish-article/publish-article.command.ts
-import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
+import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
 import { ArticleService } from '../../services';
 import { PublishArticleCommand } from './publish-article.handler';
 
-/**
- * @description Handles the PublishArticleCommand. Delegates to ArticleService.
- * @type {CommandHandler}
- */
 @CommandHandler(PublishArticleCommand)
 export class PublishArticleHandler implements ICommandHandler<PublishArticleCommand> {
   constructor(private readonly articleSvc: ArticleService) {}
 
-  /**
-   * @description Executes the command.
-   * @param {PublishArticleCommand} command
-   * @returns {Promise<null>}
-   */
   async execute(command: PublishArticleCommand): Promise<null> {
-    const { props } = command;
-    await this.articleSvc.publish(props);
+    await this.articleSvc.publish(command.props);
     return null;
   }
 }
@@ -140,17 +121,12 @@ They must **never** return full data objects.
 export class CreateArticleHandler implements ICommandHandler<CreateArticleCommand> {
   constructor(
     @Inject(ARTICLE_REPOSITORY)
-    private readonly articleRepo: ArticleRepository,
+    private readonly articleRepo: IArticleRepository,
   ) {}
 
-  /**
-   * @description Creates the article and returns its ID.
-   * @param {CreateArticleCommand} command
-   * @returns {Promise<string>} The ID of the newly created article.
-   */
   async execute(command: CreateArticleCommand): Promise<string> {
-    const { props } = command;
-    const article = await this.articleRepo.create(props);
+    const article = await this.articleRepo.create(command.props);
+    if (!article) throw new NotFoundException(ARTICLE_ERRORS.CREATE_FAILED);
     return article.id;
   }
 }
@@ -163,12 +139,8 @@ plain property directly.
 
 ```typescript
 // commands/delete-article/delete-article.handler.ts
-import { ICommand } from '@nestjs/cqrs';
+import type { ICommand } from '@nestjs/cqrs';
 
-/**
- * @description Command message to delete an article by ID.
- * @type {Command}
- */
 export class DeleteArticleCommand implements ICommand {
   constructor(public readonly articleId: string) {}
 }
@@ -180,13 +152,13 @@ export class DeleteArticleCommand implements ICommand {
 export class DeleteArticleHandler implements ICommandHandler<DeleteArticleCommand> {
   constructor(
     @Inject(ARTICLE_REPOSITORY)
-    private readonly articleRepo: ArticleRepository,
+    private readonly articleRepo: IArticleRepository,
   ) {}
 
   async execute(command: DeleteArticleCommand): Promise<null> {
     // Single-prop commands: destructure directly from command, not from props
     const { articleId } = command;
-    await this.articleRepo.hardDelete(articleId);
+    await this.articleRepo.deleteById(articleId);
     return null;
   }
 }
@@ -200,12 +172,8 @@ export class DeleteArticleHandler implements ICommandHandler<DeleteArticleComman
 
 ```typescript
 // queries/get-article/get-article.query.ts
-import { IQuery } from '@nestjs/cqrs';
+import type { IQuery } from '@nestjs/cqrs';
 
-/**
- * @description Query message to retrieve a single article by ID.
- * @type {Query}
- */
 export class GetArticleQuery implements IQuery {
   constructor(public readonly id: string) {}
 }
@@ -217,84 +185,68 @@ export class GetArticleQuery implements IQuery {
 
 ```typescript
 // queries/get-article/get-article.handler.ts
+import { ARTICLE_REPOSITORY, type IArticleRepository } from '@app/layer-data';
+import type { ArticleSelect } from '@app/database/types';
 import { Inject } from '@nestjs/common';
-import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
+import { type IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 
-import { ARTICLE_REPOSITORY } from '../../providers';
-import { ArticleRepository } from '../../repositories';
 import { GetArticleQuery } from './get-article.query';
 
-/**
- * @description Handles the GetArticleQuery. Fetches a single article by ID.
- * @type {QueryHandler}
- */
 @QueryHandler(GetArticleQuery)
 export class GetArticleHandler implements IQueryHandler<GetArticleQuery> {
   constructor(
     @Inject(ARTICLE_REPOSITORY)
-    private readonly articleRepo: ArticleRepository,
+    private readonly articleRepo: IArticleRepository,
   ) {}
 
-  /**
-   * @description Executes the query.
-   * @param {GetArticleQuery} query
-   * @returns {Promise<ArticleSelect | null>}
-   */
   async execute(query: GetArticleQuery): Promise<ArticleSelect | null> {
-    const { id } = query;
-    return await this.articleRepo.findById(id);
+    return this.articleRepo.findById(query.id);
   }
 }
 ```
 
 ### 3.3 Pagination query
 
-Use `OffsetPagination` as the query prop type and return `OffsetResult<T>`.
+The query carries a `props` object (the DTO fields spread in, plus any auth context the handler
+needs); the repository's `findPaginated(params)` returns an `OffsetResult<T>` = `{ data, pagination }`.
+The handler may map each row before returning, but keeps the `{ data, pagination }` shape — the
+controller remaps `data` → `items` (see [API-DESIGN.md §2.3](./API-DESIGN.md#23-pagination-endpoint)).
 
 ```typescript
 // queries/get-articles/get-articles.query.ts
-import { IQuery } from '@nestjs/cqrs';
+import type { IQuery } from '@nestjs/cqrs';
+import type { GetArticlesDto } from '../../dtos';
+import type { RoleKey } from '@prowerbdigital/common';
 
-import { OffsetPagination } from '../../../../common';
+export interface GetArticlesQueryProps extends GetArticlesDto {
+  currentUserId: string;
+  roleKey: RoleKey;
+}
 
-/**
- * @description Query message to retrieve a paginated list of articles.
- * @type {Query}
- */
 export class GetArticlesQuery implements IQuery {
-  constructor(public readonly props: OffsetPagination) {}
+  constructor(public readonly props: GetArticlesQueryProps) {}
 }
 ```
 
 ```typescript
 // queries/get-articles/get-articles.handler.ts
+import { ARTICLE_REPOSITORY, type IArticleRepository } from '@app/layer-data';
 import { Inject } from '@nestjs/common';
-import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
+import { type IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 
-import { OffsetResult } from '../../../../common';
-import { ARTICLE_REPOSITORY } from '../../providers';
-import { ArticleRepository } from '../../repositories';
 import { GetArticlesQuery } from './get-articles.query';
 
-/**
- * @description Handles the GetArticlesQuery. Returns paginated articles.
- * @type {QueryHandler}
- */
 @QueryHandler(GetArticlesQuery)
 export class GetArticlesHandler implements IQueryHandler<GetArticlesQuery> {
   constructor(
     @Inject(ARTICLE_REPOSITORY)
-    private readonly articleRepo: ArticleRepository,
+    private readonly articleRepo: IArticleRepository,
   ) {}
 
-  /**
-   * @description Executes the query.
-   * @param {GetArticlesQuery} query
-   * @returns {Promise<OffsetResult<ArticleSelect>>}
-   */
-  async execute(query: GetArticlesQuery): Promise<OffsetResult<ArticleSelect>> {
-    const { props } = query;
-    return await this.articleRepo.findWithOffset(props);
+  async execute(query: GetArticlesQuery) {
+    const { currentUserId, roleKey, ...params } = query.props;
+    const { data, pagination } = await this.articleRepo.findPaginated(params);
+    return { data, pagination };
   }
 }
 ```

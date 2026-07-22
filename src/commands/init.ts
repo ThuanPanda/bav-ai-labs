@@ -118,19 +118,23 @@ function listUiComponents(bundleSrc: string): string[] {
     .readdirSync(uiDir)
     .filter((f) => f.endsWith('.tsx') || f.endsWith('.ts'))
     .map((f) => f.replace(/\.(tsx|ts)$/, ''))
-    .sort((a, b) => a.localeCompare(b));
+    .toSorted((a, b) => a.localeCompare(b));
 }
 
 /** Resolve a local import specifier to an existing file under the bundle. */
-function resolveLocalImport(fromFile: string, specifier: string, bundleSrc: string): string | null {
-  let base: string | null = null;
+function resolveLocalImport(
+  fromFile: string,
+  specifier: string,
+  bundleSrc: string,
+): string | undefined {
+  let base: string;
 
   if (specifier.startsWith('@/')) {
     base = path.join(bundleSrc, 'src', specifier.slice(2));
   } else if (specifier.startsWith('.')) {
     base = path.resolve(path.dirname(fromFile), specifier);
   } else {
-    return null;
+    return undefined;
   }
 
   const candidates = [
@@ -153,7 +157,7 @@ function resolveLocalImport(fromFile: string, specifier: string, bundleSrc: stri
     }
   }
 
-  return null;
+  return undefined;
 }
 
 const IMPORT_RE = /from\s+['"]([^'"]+)['"]/g;
@@ -192,29 +196,29 @@ function collectSelectedComponentFiles(bundleSrc: string, componentNames: string
     collectLocalDeps(entry, bundleSrc, visited);
   }
 
-  return [...visited].sort();
+  return [...visited].toSorted();
 }
 
 // ─── NPM PACKAGE RESOLUTION & INSTALL ────────────────────────────────────────
 
 /** `dayjs/plugin/utc` → `dayjs`, `@scope/pkg/sub` → `@scope/pkg` */
-function packageNameFromSpecifier(specifier: string): string | null {
+function packageNameFromSpecifier(specifier: string): string | undefined {
   if (
     specifier.startsWith('.') ||
     specifier.startsWith('@/') ||
     specifier.startsWith('node:') ||
     specifier.startsWith('#')
   ) {
-    return null;
+    return undefined;
   }
 
   if (specifier.startsWith('@')) {
     const parts = specifier.split('/');
-    if (parts.length < 2) return null;
+    if (parts.length < 2) return undefined;
     return `${parts[0]}/${parts[1]}`;
   }
 
-  return specifier.split('/')[0] || null;
+  return specifier.split('/')[0] || undefined;
 }
 
 function collectNpmPackagesFromFiles(files: string[]): string[] {
@@ -233,7 +237,7 @@ function collectNpmPackagesFromFiles(files: string[]): string[] {
     }
   }
 
-  return [...pkgs].sort();
+  return [...pkgs].toSorted();
 }
 
 interface ProjectPackageJson {
@@ -244,13 +248,13 @@ interface ProjectPackageJson {
   packageManager?: string;
 }
 
-function readProjectPackageJson(cwd: string): ProjectPackageJson | null {
+function readProjectPackageJson(cwd: string): ProjectPackageJson | undefined {
   const pkgPath = path.join(cwd, 'package.json');
-  if (!fs.existsSync(pkgPath)) return null;
+  if (!fs.existsSync(pkgPath)) return undefined;
   try {
     return JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as ProjectPackageJson;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
@@ -279,12 +283,15 @@ function detectPackageManager(cwd: string, pkg: ProjectPackageJson | null): Pack
 function buildAddCommand(pm: PackageManager, packages: string[]): string {
   const list = packages.join(' ');
   switch (pm) {
-    case 'pnpm':
+    case 'pnpm': {
       return `pnpm add ${list}`;
-    case 'yarn':
+    }
+    case 'yarn': {
       return `yarn add ${list}`;
-    case 'npm':
+    }
+    case 'npm': {
       return `npm install ${list}`;
+    }
   }
 }
 
@@ -489,7 +496,7 @@ export const initCommand = new Command('init')
         const npmPackages = collectNpmPackagesFromFiles(copiedFiles);
         // Prefer scanned packages; fall back to full list if scan is empty (shouldn't happen)
         const required =
-          npmPackages.length > 0 ? npmPackages : [...CCEP_COMPONENTS_DEPENDENCIES].sort();
+          npmPackages.length > 0 ? npmPackages : [...CCEP_COMPONENTS_DEPENDENCIES].toSorted();
 
         installMissingDependencies(cwd, required);
         printCcepHints({

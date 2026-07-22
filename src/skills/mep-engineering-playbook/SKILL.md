@@ -1,6 +1,6 @@
 ---
 name: mep-engineering-playbook
-version: 1.1.0
+version: 1.2.0
 description: >
   Mandatory engineering playbook for all NestJS CQRS microservice projects at MEP. Every
   agent MUST read and strictly follow the conventions in this playbook before writing any
@@ -8,8 +8,9 @@ description: >
   services, DTOs, module registration, and file naming. This playbook is the single source
   of truth for code structure, patterns, and style across all MEP projects. Entry points
   may be HTTP controllers, message pattern handlers, gRPC methods, or WebSocket gateways
-  depending on the project transport. Success responses MUST use the project-defined
-  response helpers. Errors MUST be thrown with a NestJS HTTP exception carrying a module
+  depending on the project transport. Controllers return plain objects shaped by a response DTO via
+  `@Serialize` + `@ApiSuccessResponse`; a global `ResponseInterceptor` builds the envelope. Errors
+  MUST be thrown with a NestJS HTTP exception carrying a module
   error-key constant (`<MODULE>_ERRORS.KEY`) — never a raw string, and never raw Error or
   HttpException.
 ---
@@ -18,6 +19,14 @@ description: >
 
 Mandatory conventions guide for all NestJS CQRS microservice projects.
 **Read every relevant section before writing any code.**
+
+> **This repo (`mep-etr`) is a pnpm-workspace monorepo.** Feature code lives under
+> `apps/<app>/src/modules/<module>` for three apps — `internal`, `external`, `worker`. Shared code
+> lives in libraries aliased in `tsconfig.json`: `@app/database` (Drizzle schema + types),
+> `@app/layer-data` (**all** repositories), `@app/common` (config/validators), `@app/third-party`.
+> The framework package **`@prowerbdigital/common`** supplies `BaseRepositoryV2`, `DRIZZLE_PROVIDER`,
+> pagination DTOs, `@Serialize`, `@ApiSuccessResponse`, the response interceptors and auth
+> decorators. Wherever a path below shows `src/modules/...`, read it as `apps/<app>/src/modules/...`.
 
 ## Reference files
 
@@ -70,8 +79,12 @@ Incoming request (HTTP / Message / gRPC / WebSocket)
    class, method, DTO, interface, type, or field _is_ — never add a `@description`/JSDoc block or an
    inline comment just to paraphrase them. Add a comment **only** to explain complex, non-obvious
    business logic (a rule, an edge case, a "why"). See [CONVENTIONS.md](./CONVENTIONS.md).
-9. Success responses MUST use the project-defined response helpers — never write raw
-   transport responses directly.
+9. Controllers **return a plain object**; a global `ResponseInterceptor` wraps it in the envelope.
+   Shape and document the output with a response DTO in `responses/` (`@Exclude` + `@Expose`) applied
+   via `@Serialize(Dto)` + `@ApiSuccessResponse(Dto)` (both from `@prowerbdigital/common`). **Never**
+   inject `@Res()` or call `res.json(...)` — the sole exception is binary/file streaming (e.g. an
+   Excel export). This project does **not** use `i18n.t(...)` or `OK()`/`CREATED()` helpers in
+   controllers. See [API-DESIGN.md](./API-DESIGN.md) §7.
 10. Errors MUST be thrown with a NestJS HTTP exception (`NotFoundException`,
     `BadRequestException`, …) carrying a **module error-key constant**
     (`<MODULE>_ERRORS.KEY` = `'<MODULE>.<REASON>'`) — never a human-readable string, and never
@@ -83,7 +96,7 @@ Incoming request (HTTP / Message / gRPC / WebSocket)
 ## Module directory layout
 
 ```
-src/modules/<module>/
+apps/<app>/src/modules/<module>/
 ├── <module>.module.ts
 ├── commands/
 │   ├── <verb>-<noun>/
@@ -97,12 +110,13 @@ src/modules/<module>/
 │   │   ├── <verb>-<noun>.handler.ts   ← @QueryHandler class
 │   │   └── index.ts
 │   └── index.ts
-├── entry/                             ← HTTP controllers / message handlers / gRPC / WS gateways
-│   ├── <module>.controller.ts         ← naming matches transport (controller / gateway / etc.)
+├── controllers/                       ← HTTP controllers (or gateways / message handlers)
+│   ├── <module>.controller.ts
 │   └── index.ts
 ├── dtos/                              ← class-validator input DTOs
-├── services/                          ← Complex business logic only
-└── constants/                         ← i18n keys, enums
+├── responses/                         ← class-transformer response DTOs (@Exclude/@Expose)
+├── services/                          ← logic SHARED across multiple handlers only
+└── constants/                         ← error-key constants, enums
 ```
 
 > **Repositories do NOT live in the feature module.** Interfaces, repositories, and providers
@@ -126,7 +140,7 @@ src/modules/<module>/
 | Deciding what goes in a handler vs a Service        | [CQRS.md](./CQRS.md) — "When to use a Service"        |
 | Writing a repository or its interface              | [REPOSITORIES.md](./REPOSITORIES.md)                  |
 | Writing an entry point (any transport)             | [API-DESIGN.md](./API-DESIGN.md)                      |
-| Sending a success response                         | [API-DESIGN.md](./API-DESIGN.md) — "Response helpers" |
+| Shaping a success response (response DTO + `@Serialize`) | [API-DESIGN.md](./API-DESIGN.md) — "Response DTOs & serialization" |
 | Throwing an error                                  | [API-DESIGN.md](./API-DESIGN.md) — "Error handling"   |
 | Creating a new module from scratch                 | [SCAFFOLDING.md](./SCAFFOLDING.md)                    |
 | Naming a file, class, variable, or adding a comment | [CONVENTIONS.md](./CONVENTIONS.md)                   |

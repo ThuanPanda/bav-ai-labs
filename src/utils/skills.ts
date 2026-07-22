@@ -8,11 +8,19 @@ export interface SkillMeta {
   name: string;
   version: string;
   description: string;
+  /** True when the skill is a bundle (no top-level SKILL.md, one or more nested sub-skills). */
+  isBundle?: boolean;
+  /** Names of the nested sub-skills (bundles only). */
+  subSkills?: string[];
 }
 
 export interface SkillFile {
+  /** File basename, e.g. `SKILL.md`. */
   name: string;
+  /** Absolute path to the source file. */
   fullPath: string;
+  /** Path relative to the skill directory, e.g. `gitnexus-cli/SKILL.md`. Preserves nested layout. */
+  relPath: string;
 }
 
 // ─── PATHS ───────────────────────────────────────────────────────────────────
@@ -88,6 +96,62 @@ export function stripFrontmatter(content: string): string {
 
 // ─── REGISTRY ────────────────────────────────────────────────────────────────
 
+/**
+ * Find sub-directories (recursively) that contain a `SKILL.md`. Used to detect a
+ * bundle skill — a directory with no top-level SKILL.md but one or more nested skills
+ * (e.g. `gitnexus/gitnexus-cli/SKILL.md`). Returns the sub-skill names in sorted order.
+ */
+function findNestedSkillNames(dir: string): string[] {
+  const names: string[] = [];
+
+  const walk = (current: string): void => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const child = path.join(current, entry.name);
+      if (fs.existsSync(path.join(child, 'SKILL.md'))) {
+        const fm = parseFrontmatter(fs.readFileSync(path.join(child, 'SKILL.md'), 'utf8'));
+        names.push(fm['name'] ?? entry.name);
+      } else {
+        walk(child);
+      }
+    }
+  };
+
+  walk(dir);
+  return names.toSorted((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Build metadata for a single skill directory. Handles two shapes:
+ *  - **Flat skill** — `<dir>/SKILL.md` exists; metadata comes from its frontmatter.
+ *  - **Bundle skill** — no top-level SKILL.md, but nested sub-skills exist; metadata is
+ *    synthesised from the sub-skill names (`gitnexus` → its six sub-skills).
+ * Returns undefined when the directory is neither.
+ */
+function buildSkillMeta(skillDir: string, fallbackName: string): SkillMeta | undefined {
+  const skillMdPath = path.join(skillDir, 'SKILL.md');
+
+  if (fs.existsSync(skillMdPath)) {
+    const fm = parseFrontmatter(fs.readFileSync(skillMdPath, 'utf8'));
+    return {
+      name: fm['name'] ?? fallbackName,
+      version: fm['version'] ?? '0.0.0',
+      description: fm['description'] ?? '',
+    };
+  }
+
+  const subSkills = findNestedSkillNames(skillDir);
+  if (subSkills.length === 0) return undefined;
+
+  return {
+    name: fallbackName,
+    version: '0.0.0',
+    description: `Bundle of ${subSkills.length} skills: ${subSkills.join(', ')}`,
+    isBundle: true,
+    subSkills,
+  };
+}
+
 /** Read all bundled skills and return their metadata. */
 export function getBundledSkills(): SkillMeta[] {
   const skillsDir = getBundledSkillsDir();
@@ -98,17 +162,8 @@ export function getBundledSkills(): SkillMeta[] {
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const skillMdPath = path.join(skillsDir, entry.name, 'SKILL.md');
-    if (!fs.existsSync(skillMdPath)) continue;
-
-    const content = fs.readFileSync(skillMdPath, 'utf8');
-    const fm = parseFrontmatter(content);
-
-    skills.push({
-      name: fm['name'] ?? entry.name,
-      version: fm['version'] ?? '0.0.0',
-      description: fm['description'] ?? '',
-    });
+    const meta = buildSkillMeta(path.join(skillsDir, entry.name), entry.name);
+    if (meta) skills.push(meta);
   }
 
   return skills;
@@ -116,26 +171,32 @@ export function getBundledSkills(): SkillMeta[] {
 
 /** Read metadata for a single bundled skill. Returns undefined if not found. */
 export function getBundledSkillMeta(skillName: string): SkillMeta | undefined {
-  const skillMdPath = path.join(getBundledSkillDir(skillName), 'SKILL.md');
-  if (!fs.existsSync(skillMdPath)) return undefined;
-
-  const content = fs.readFileSync(skillMdPath, 'utf8');
-  const fm = parseFrontmatter(content);
-
-  return {
-    name: fm['name'] ?? skillName,
-    version: fm['version'] ?? '0.0.0',
-    description: fm['description'] ?? '',
-  };
+  const skillDir = getBundledSkillDir(skillName);
+  if (!fs.existsSync(skillDir)) return undefined;
+  return buildSkillMeta(skillDir, skillName);
 }
 
-/** List all files in a bundled skill directory. */
+/**
+ * List every file in a bundled skill directory, recursing into sub-directories so nested
+ * bundle skills keep their layout. Each entry carries a `relPath` relative to the skill dir.
+ */
 export function getBundledSkillFiles(skillName: string): SkillFile[] {
   const skillDir = getBundledSkillDir(skillName);
   if (!fs.existsSync(skillDir)) return [];
 
-  return fs
-    .readdirSync(skillDir, { withFileTypes: true })
-    .filter((e) => e.isFile())
-    .map((e) => ({ name: e.name, fullPath: path.join(skillDir, e.name) }));
+  const files: SkillFile[] = [];
+
+  const walk = (current: string): void => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.isFile()) {
+        files.push({ name: entry.name, fullPath: full, relPath: path.relative(skillDir, full) });
+      }
+    }
+  };
+
+  walk(skillDir);
+  return files;
 }

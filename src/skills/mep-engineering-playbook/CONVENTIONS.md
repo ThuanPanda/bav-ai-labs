@@ -15,7 +15,7 @@
 ## 1. Module directory layout
 
 ```
-src/modules/<module>/
+apps/<app>/src/modules/<module>/
 ├── <module>.module.ts
 ├── commands/
 │   ├── index.ts
@@ -29,31 +29,27 @@ src/modules/<module>/
 │       ├── <verb>-<noun>.query.ts     ← IQuery class
 │       ├── <verb>-<noun>.handler.ts   ← @QueryHandler class
 │       └── index.ts
-├── entry/                             ← controllers / gateways / message handlers
-│   ├── <module>.controller.ts         (or .gateway.ts / .message.controller.ts)
-│   └── index.ts
+├── controllers/
+│   ├── index.ts
+│   └── <module>.controller.ts         ← (or .gateway.ts / .message.controller.ts)
 ├── dtos/
 │   ├── index.ts
-│   └── <verb>-<noun>.dto.ts
-├── interfaces/
+│   └── <verb>-<noun>.dto.ts           ← class-validator input DTOs
+├── responses/
 │   ├── index.ts
-│   └── <entity>.interface.ts
-├── providers/
-│   ├── index.ts
-│   └── <entity>.provider.ts
-├── repositories/
-│   ├── index.ts
-│   └── <entity>.repository.ts
-├── services/
+│   └── <name>.response.ts             ← class-transformer response DTOs (@Exclude/@Expose)
+├── services/                          ← only for logic SHARED across handlers
 │   ├── index.ts
 │   └── <domain>.service.ts
 └── constants/
     ├── index.ts
-    └── <module>-i18n.constants.ts
+    └── <module>-error.constants.ts    ← <MODULE>_ERRORS error-key map
 ```
 
-> Some modules place the controller directly at the module root (e.g. `<module>.controller.ts`)
-> instead of inside an `entry/` subfolder. Both are acceptable; be consistent within a module.
+> **Repositories, interfaces and providers are NOT in the feature module** — they live in
+> `libs/layer-data` (`@app/layer-data`). See [REPOSITORIES.md](./REPOSITORIES.md).
+> The controller usually lives in `controllers/`; a few small modules keep it at the module root.
+> Be consistent within a module.
 
 ---
 
@@ -77,21 +73,28 @@ All file names use **kebab-case**.
 | `<verb>-<noun>.query.ts`   | `class <Verb><Noun>Query implements IQuery`                                           |
 | `<verb>-<noun>.handler.ts` | `@QueryHandler(<Verb><Noun>Query) class <Verb><Noun>Handler implements IQueryHandler` |
 
-### Other files
+### Other files (feature module)
 
-| Pattern                          | Contains                   |
-| -------------------------------- | -------------------------- |
-| `<entity>.interface.ts`          | Repository interface       |
-| `<entity>.provider.ts`           | Token constant + Provider  |
-| `<entity>.repository.ts`         | Repository implementation  |
-| `<domain>.service.ts`            | Service class              |
-| `<verb>-<noun>.dto.ts`           | Input DTO                  |
-| `<module>-i18n.constants.ts`     | i18n key constants         |
-| `<module>.module.ts`             | NestJS module              |
-| `<module>.controller.ts`         | HTTP controller            |
-| `<module>.gateway.ts`            | WebSocket gateway          |
-| `<module>.message.controller.ts` | Message pattern controller |
-| `<module>.grpc.controller.ts`    | gRPC controller            |
+| Pattern                          | Contains                                   |
+| -------------------------------- | ------------------------------------------ |
+| `<verb>-<noun>.dto.ts`           | class-validator input DTO                  |
+| `<name>.response.ts`             | class-transformer response DTO             |
+| `<domain>.service.ts`            | Service (shared-across-handlers logic only)|
+| `<module>-error.constants.ts`    | `<MODULE>_ERRORS` error-key constants       |
+| `<module>.module.ts`             | NestJS module                              |
+| `<module>.controller.ts`         | HTTP controller                            |
+| `<module>.gateway.ts`            | WebSocket gateway                          |
+| `<module>.message.controller.ts` | Message pattern controller                 |
+| `<module>.grpc.controller.ts`    | gRPC controller                            |
+
+### Data-layer files (`libs/layer-data`)
+
+| Pattern                  | Contains                     |
+| ------------------------ | ---------------------------- |
+| `<entity>.interface.ts`  | `I<Entity>Repository`         |
+| `<entity>.provider.ts`   | `Symbol` token + Provider     |
+| `<entity>.repository.ts` | Repository implementation     |
+| `<domain>-data.module.ts`| Per-domain `*DataModule`      |
 
 ---
 
@@ -128,11 +131,11 @@ All class names use **PascalCase**.
   - Bus: `queryBus` / `commandBus`
 
 ```typescript
-// Token constants
-export const ARTICLE_REPOSITORY = 'ARTICLE_REPOSITORY';
+// Repository token constants are Symbols (in libs/layer-data)
+export const ARTICLE_REPOSITORY = Symbol('ARTICLE_REPOSITORY');
 
 // Private properties
-private readonly articleRepo: ArticleRepository
+private readonly articleRepo: IArticleRepository
 private readonly articleSvc: ArticleService
 private readonly drizzle: NodePgDatabase<typeof schema>
 private readonly queryBus: QueryBus
@@ -204,23 +207,21 @@ const useEventPeriod =
 
 ## 7. Import order
 
-Group imports in this order, separated by a blank line:
+Group imports in this order, separated by a blank line (Biome enforces ordering):
 
 1. Node built-ins (`node:crypto`, `node:path`, etc.)
-2. Third-party packages (`@nestjs/...`, `drizzle-orm`, `class-validator`, etc.)
-3. Absolute project imports (`../../../common`, `../../../core`, `../../../db`)
-4. Relative imports within the module (`../../services`, `./create-article.handler`)
+2. Workspace/framework packages first, then third-party (`@app/*`, `@prowerbdigital/*`, `@nestjs/*`,
+   `drizzle-orm`, `class-validator`, …)
+3. Relative imports within the module (`../../services`, `./create-article.handler`)
 
 ```typescript
 import { randomUUID } from 'node:crypto';
 
-import { Inject, Injectable } from '@nestjs/common';
-import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
+import { ARTICLE_REPOSITORY, type IArticleRepository } from '@app/layer-data';
+import type { ArticleInsert } from '@app/database/types';
+import { Inject } from '@nestjs/common';
+import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
-import { DRIZZLE_PROVIDER } from '../../../core';
-import { ArticleInsert } from '../../../db';
-
-import { ARTICLE_REPOSITORY } from '../../providers';
-import { ArticleRepository } from '../../repositories';
+import { ARTICLE_ERRORS } from '../../constants';
 import { CreateArticleCommand } from './create-article.handler';
 ```

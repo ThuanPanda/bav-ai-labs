@@ -1,5 +1,10 @@
 # Drizzle Schema Conventions
 
+> The schema lives in **`libs/database/src`** (`@app/database`): tables in `schemas/*.table.ts`,
+> `pgEnum`s in `schemas/_enums.ts`, relations in `schemas/_relations.table.ts`, and derived
+> TypeScript types in `types/*.types.ts`. Consumers import from `@app/database` /
+> `@app/database/schemas` / `@app/database/types`.
+
 ## Table of contents
 
 1. [Table naming](#1-table-naming)
@@ -118,10 +123,10 @@ schedule: jsonb('schedule').$type<EventSchedule>(),
 adminContact: jsonb('admin_contact'),
 ```
 
-Define the TypeScript types for JSONB shapes in a dedicated types file (e.g. `src/db/types/jsonb.types.ts`) and import them into the table file.
+Define the TypeScript types for JSONB shapes in `libs/database/src/types/jsonb.types.ts` and import them into the table file.
 
 ```ts
-import type { AdminContact, Location } from '../../db/types/jsonb.types';
+import type { AdminContact, Location } from '../types/jsonb.types';
 ```
 
 ---
@@ -132,8 +137,8 @@ import type { AdminContact, Location } from '../../db/types/jsonb.types';
 `export type` aliases in `_enums.ts`.
 
 The derived TypeScript union types (`(typeof XxxEnum.enumValues)[number]`) must live in the
-dedicated `src/types/enum.types.ts` file, which imports the `pgEnum` constants from
-`../schemas/_enums` and re-exports the union types through `src/types/index.ts`.
+dedicated `libs/database/src/types/enum.types.ts` file, which imports the `pgEnum` constants from
+`../schemas/_enums` and re-exports the union types through `libs/database/src/types/index.ts`.
 
 ```ts
 // schemas/_enums.ts — pgEnum constants only

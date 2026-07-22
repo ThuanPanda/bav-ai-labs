@@ -8,7 +8,7 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
   // ─── IGNORED PATHS ────────────────────────────────────────────────────────
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**'],
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'src/boilerplate/**', 'src/registry/**'],
   },
 
   // ─── BASE ─────────────────────────────────────────────────────────────────

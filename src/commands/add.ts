@@ -18,7 +18,10 @@ function copySkill(skillName: string, provider: Provider, scope: Scope, cwd: str
   fs.mkdirSync(destDir, { recursive: true });
   const files = getBundledSkillFiles(skillName);
   for (const file of files) {
-    fs.copyFileSync(file.fullPath, path.join(destDir, file.name));
+    // relPath preserves nested layout (e.g. gitnexus-cli/SKILL.md) for bundle skills.
+    const dest = path.join(destDir, file.relPath);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(file.fullPath, dest);
   }
   return destDir;
 }
