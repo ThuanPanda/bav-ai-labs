@@ -71,18 +71,27 @@ function getBoilerplateDir(name: string): string {
 
 const SKIP_DIRS = new Set(['node_modules', '.next', 'dist']);
 
-function copyDir(src: string, dest: string): void {
+/**
+ * npm strips `.npmrc` and `.gitignore` from a published package, so bundled templates ship them
+ * under a dot-less alias; restore the real name on scaffold.
+ */
+const DOTFILE_ALIASES: Record<string, string> = {
+  gitignore: '.gitignore',
+  npmrc: '.npmrc',
+};
+
+export function copyDir(src: string, dest: string): void {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     if (SKIP_DIRS.has(entry.name)) continue;
 
     const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
 
     if (entry.isDirectory()) {
-      copyDir(srcPath, destPath);
+      copyDir(srcPath, path.join(dest, entry.name));
     } else {
-      fs.copyFileSync(srcPath, destPath);
+      const destName = DOTFILE_ALIASES[entry.name] ?? entry.name;
+      fs.copyFileSync(srcPath, path.join(dest, destName));
     }
   }
 }

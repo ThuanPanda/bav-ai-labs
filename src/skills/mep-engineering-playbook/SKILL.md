@@ -1,6 +1,6 @@
 ---
 name: mep-engineering-playbook
-version: 1.3.0
+version: 1.3.2
 description: >
   Mandatory engineering playbook for all NestJS CQRS microservice projects at MEP. Every
   agent MUST read and strictly follow the conventions in this playbook before writing any

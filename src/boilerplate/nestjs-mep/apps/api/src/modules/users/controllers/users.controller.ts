@@ -21,7 +21,7 @@ export class UsersController {
     private readonly commandBus: CommandBus,
   ) {}
 
-  @Get('list')
+  @Get()
   @ApiOperation({ summary: 'List users — page paginated' })
   @ApiSuccessResponse(UserOffsetListResponse)
   @Serialize(UserOffsetListResponse)

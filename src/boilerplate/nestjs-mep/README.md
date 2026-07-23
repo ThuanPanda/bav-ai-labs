@@ -54,7 +54,7 @@ pnpm db:generate
 pnpm db:migrate
 
 # run
-pnpm start:dev            # http://localhost:8080/api/v1/users/list
+pnpm start:dev            # http://localhost:8080/api/v1/users
                           # swagger: http://localhost:8080/api/docs
 ```
 

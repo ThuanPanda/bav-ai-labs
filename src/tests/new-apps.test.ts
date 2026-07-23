@@ -23,7 +23,7 @@ vi.mock('conf', () => ({
   },
 }));
 
-const { generateApps, parseAppNames } = await import('../commands/new');
+const { copyDir, generateApps, parseAppNames } = await import('../commands/new');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BOILERPLATE_SRC = path.join(__dirname, '..', 'boilerplate', 'nestjs-mep');
@@ -59,6 +59,25 @@ describe('parseAppNames', () => {
 
   it('returns a single default name unchanged', () => {
     expect(parseAppNames('api')).toEqual(['api']);
+  });
+});
+
+// ─── copyDir — dotfile aliases ──────────────────────────────────────────────────
+describe('copyDir', () => {
+  it('restores npm-stripped dotfiles (npmrc/gitignore) to their dotted names', () => {
+    const dest = path.join(tmp, 'scaffold');
+    copyDir(BOILERPLATE_SRC, dest);
+
+    // The bundled aliases exist in source but must land as real dotfiles.
+    expect(fs.existsSync(path.join(dest, '.npmrc'))).toBe(true);
+    expect(fs.existsSync(path.join(dest, '.gitignore'))).toBe(true);
+    expect(fs.existsSync(path.join(dest, 'npmrc'))).toBe(false);
+    expect(fs.existsSync(path.join(dest, 'gitignore'))).toBe(false);
+
+    // Content is copied verbatim.
+    expect(fs.readFileSync(path.join(dest, '.npmrc'), 'utf8')).toContain(
+      '@prowerbdigital:registry',
+    );
   });
 });
 

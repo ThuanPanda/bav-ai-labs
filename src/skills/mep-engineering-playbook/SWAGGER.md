@@ -3,14 +3,19 @@
 Mandatory guide for configuring Swagger (OpenAPI) in MEP NestJS CQRS microservices.
 **Follow this document whenever you add or update swagger documentation in any HTTP module.**
 
+> **Response model.** Controllers return **plain objects**; the global `ResponseInterceptor`
+> wraps them in the success envelope and `@Serialize(Dto)` shapes the payload. Swagger documents
+> that envelope through **`@ApiSuccessResponse(Dto)`** — never via manual `@Res()` / `OK()` /
+> `CREATED()`. See [API-DESIGN.md](./API-DESIGN.md) for the full response + error model.
+
 ## Table of contents
 
 1. [Installation](#1-installation)
 2. [Bootstrap setup (`main.ts`)](#2-bootstrap-setup-maints)
 3. [Controller-level decorators](#3-controller-level-decorators)
 4. [Method-level decorators](#4-method-level-decorators)
-5. [DTO decorators](#5-dto-decorators)
-6. [Response schema with MEP helpers](#6-response-schema-with-mep-helpers)
+5. [Input DTO decorators](#5-input-dto-decorators)
+6. [Response DTOs](#6-response-dtos)
 7. [Pagination endpoints](#7-pagination-endpoints)
 8. [Enums](#8-enums)
 9. [Auth — Bearer token](#9-auth--bearer-token)
@@ -22,173 +27,162 @@ Mandatory guide for configuring Swagger (OpenAPI) in MEP NestJS CQRS microservic
 
 ## 1. Installation
 
+`@nestjs/swagger` ships as a dependency of every MEP service (it backs `@prowerbdigital/common`'s
+`setupSwagger` + `@ApiSuccessResponse`). If a fresh project is missing it:
+
 ```bash
 pnpm add @nestjs/swagger
 ```
-
-No additional peer dependencies are required — `@nestjs/swagger` uses the existing
-`@nestjs/common` and `@nestjs/core` packages already present in every MEP project.
 
 ---
 
 ## 2. Bootstrap setup (`main.ts`)
 
-Add Swagger setup **after** all global middleware, pipes, and guards but **before** `app.listen()`.
+Use **`setupSwagger` from `@prowerbdigital/common`** — never call `DocumentBuilder` /
+`SwaggerModule` directly. The helper builds the OpenAPI document, registers a Bearer scheme, and
+mounts the UI, so every service documents consistently. Add it **after** global pipes/interceptors/
+filters and only outside production.
 
 ```typescript
 // main.ts
-import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { NodeEnv, setupSwagger } from '@prowerbdigital/common';
 
-import { AppModule } from './app.module';
+// ...after app.useGlobalPipes / interceptors / filters...
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-
-  // --- global middleware / pipes / guards here ---
-
-  // Swagger — only enable outside production
-  if (process.env['NODE_ENV'] !== 'production') {
-    const config = new DocumentBuilder()
-      .setTitle('MEP Service')
-      .setDescription('API documentation for this MEP microservice')
-      .setVersion('1.0')
-      .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'access-token')
-      .build();
-
-    const document = SwaggerModule.createDocument(app, config);
-    SwaggerModule.setup('api/docs', app, document, {
-      swaggerOptions: {
-        persistAuthorization: true,
-      },
-    });
-  }
-
-  await app.listen(process.env['PORT'] ?? 3000);
+if (nodeEnv !== NodeEnv.Prod) {
+  setupSwagger(app, {
+    title: 'MEP <Service> API',
+    description: 'MEP <Service> API documentation',
+    path: 'api/docs',
+    bearerAuthName: 'SWAGGER_BEARER_TOKEN',
+  });
 }
-
-bootstrap();
 ```
 
-> Access the UI at `http://localhost:<PORT>/api/docs`.
-> `persistAuthorization: true` keeps the Bearer token after page refresh — always set this.
+> Access the UI at `http://localhost:<PORT>/api/docs` (respecting the global prefix, e.g.
+> `.../api/docs`). `bearerAuthName` names the Bearer security scheme — reuse that exact string in
+> any `@ApiBearerAuth(...)` decorator (see §9).
 
 ---
 
 ## 3. Controller-level decorators
 
-Apply both decorators to **every** HTTP controller class.
-
-| Decorator                        | Purpose                                          |
-| -------------------------------- | ------------------------------------------------ |
-| `@ApiTags('ModuleName')`         | Groups endpoints under a named section in the UI |
-| `@ApiBearerAuth('access-token')` | Marks all routes as requiring Bearer JWT auth    |
-
-The `'access-token'` string must match the name used in `addBearerAuth(...)` in `main.ts`.
+Apply `@ApiTags('ModuleName')` to **every** HTTP controller class to group its endpoints in the UI.
 
 ```typescript
-// modules/article/entry/article.controller.ts
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+// modules/article/controllers/article.controller.ts
+import { Controller } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 
-@Controller({ version: '1', path: 'article' })
-@ApiTags('Article')
-@ApiBearerAuth('access-token')
-export class ArticleController {
-  ...
-}
+@Controller({ version: '1', path: 'articles' })
+@ApiTags('Articles')
+export class ArticleController { ... }
 ```
 
-> If the controller has any **public** routes, keep `@ApiBearerAuth` on the class and add
-> `@ApiSecurity([])` at the method level — see [§10 Public routes](#10-public-routes).
+Routes are auth-protected by default (a global guard). To show the lock icon / attach the Bearer
+requirement in the UI, add `@ApiBearerAuth('SWAGGER_BEARER_TOKEN')` — the string must match the
+`bearerAuthName` passed to `setupSwagger` (see §9). Public routes opt out per method (see §10).
 
 ---
 
 ## 4. Method-level decorators
 
-Apply to every controller method. Minimum required: `@ApiOperation` + at least one `@ApiResponse`.
+Every method carries `@ApiOperation` + `@ApiSuccessResponse(<ResponseDto>)`. Document path/query
+params with `@ApiParam` / `@ApiQuery`.
 
 ### 4.1 Core decorators
 
-| Decorator                                            | Purpose                                           |
-| ---------------------------------------------------- | ------------------------------------------------- |
-| `@ApiOperation({ summary: '...' })`                  | One-line description shown in the endpoint header |
-| `@ApiResponse({ status, description, type })`        | Documents a possible response                     |
-| `@ApiParam({ name, description, required? })`        | Documents a path parameter (`:id`)                |
-| `@ApiQuery({ name, description, required?, type? })` | Documents a query string param                    |
+| Decorator                                   | Purpose                                                              |
+| ------------------------------------------- | ------------------------------------------------------------------- |
+| `@ApiOperation({ summary })`                | One-line description shown in the endpoint header                   |
+| `@ApiSuccessResponse(<ResponseDto>)`        | Documents the success envelope wrapping `<ResponseDto>` (from `@prowerbdigital/common`) |
+| `@ApiParam({ name, description, required })` | Documents a path parameter (`:id`)                                  |
+| `@ApiQuery({ name, ... })`                  | Documents a query param (usually auto-derived from the `@Query()` DTO) |
+| `@ApiResponse({ status, description })`     | Optionally documents a notable error status (e.g. `404`)            |
 
-### 4.2 Common response statuses
+`@ApiSuccessResponse(Dto)` documents the response; **pair it with `@Serialize(Dto)`**, which shapes
+the actual payload the handler returns. Errors are thrown as NestJS HTTP exceptions carrying a
+module error-key constant — see [API-DESIGN.md §8](./API-DESIGN.md#8-error-handling); document the
+important ones with `@ApiResponse` when it aids the consumer.
 
-| Helper used    | HTTP status | `@ApiResponse` status to declare |
-| -------------- | ----------- | -------------------------------- |
-| `CREATED(res)` | 201         | `201`                            |
-| `OK(res)`      | 200         | `200`                            |
-
-### 4.3 Example — full method decoration
+### 4.2 Example — RESTful CRUD
 
 ```typescript
-import {
-  ApiOperation,
-  ApiParam,
-  ApiQuery,
-  ApiResponse,
-} from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { CommandBus, QueryBus } from '@nestjs/cqrs';
+import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiSuccessResponse, Serialize } from '@prowerbdigital/common';
 
-// POST — create
-@Post()
-@ApiOperation({ summary: 'Create a new article' })
-@ApiResponse({ status: 201, description: 'Article created successfully.' })
-@ApiResponse({ status: 400, description: 'Validation failed.' })
-@ApiResponse({ status: 401, description: 'Unauthorized.' })
-async createArticle(
-  @CurrentUserId() userId: string,
-  @Body() body: CreateArticleDto,
-  @I18n() i18n: I18nContext<I18nTranslations>,
-  @Res() res: Response,
-) {
-  const result = await this.commandBus.execute(
-    new CreateArticleCommand({ ...body, authorId: userId }),
-  );
-  CREATED(res, await i18n.t(ARTICLE_I18N_KEYS.SUCCESS.CREATED), result);
+import { CreateArticleCommand, DeleteArticleCommand, UpdateArticleCommand } from '../commands';
+import { CreateArticleDto, GetArticlesDto, UpdateArticleDto } from '../dtos';
+import { GetArticleQuery, GetArticlesQuery } from '../queries';
+import { ArticleListResponse, ArticleResponse, MutateArticleResponse } from '../responses';
+
+@Controller({ version: '1', path: 'articles' })
+@ApiTags('Articles')
+export class ArticleController {
+  constructor(
+    private readonly queryBus: QueryBus,
+    private readonly commandBus: CommandBus,
+  ) {}
+
+  @Post()
+  @ApiOperation({ summary: 'Create an article' })
+  @ApiSuccessResponse(MutateArticleResponse)
+  @Serialize(MutateArticleResponse)
+  async createArticle(@Body() body: CreateArticleDto) {
+    const id = await this.commandBus.execute(new CreateArticleCommand(body));
+    return { id };
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'List articles — page paginated' })
+  @ApiSuccessResponse(ArticleListResponse)
+  @Serialize(ArticleListResponse)
+  async getArticles(@Query() query: GetArticlesDto) {
+    const { data, pagination } = await this.queryBus.execute(new GetArticlesQuery(query));
+    return { items: data, pagination };
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get an article by id' })
+  @ApiParam({ name: 'id', required: true, description: 'Article UUID' })
+  @ApiSuccessResponse(ArticleResponse)
+  @Serialize(ArticleResponse)
+  async getArticle(@Param('id') id: string) {
+    return this.queryBus.execute(new GetArticleQuery(id));
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update an article' })
+  @ApiParam({ name: 'id', required: true, description: 'Article UUID' })
+  @ApiSuccessResponse(MutateArticleResponse)
+  @Serialize(MutateArticleResponse)
+  async updateArticle(@Param('id') id: string, @Body() body: UpdateArticleDto) {
+    const updatedId = await this.commandBus.execute(new UpdateArticleCommand({ id, ...body }));
+    return { id: updatedId };
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete an article' })
+  @ApiParam({ name: 'id', required: true, description: 'Article UUID' })
+  async deleteArticle(@Param('id') id: string) {
+    await this.commandBus.execute(new DeleteArticleCommand({ id }));
+    return { success: true };
+  }
 }
-
-// GET — single
-@Get('detail/:id')
-@ApiOperation({ summary: 'Get an article by ID' })
-@ApiParam({ name: 'id', required: true, description: 'Article UUID' })
-@ApiResponse({ status: 200, description: 'Article retrieved successfully.' })
-@ApiResponse({ status: 404, description: 'Article not found.' })
-async getArticle(...) { ... }
-
-// GET — list with query params
-@Get('list')
-@ApiOperation({ summary: 'Get paginated list of articles' })
-@ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
-@ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 20)' })
-@ApiResponse({ status: 200, description: 'Article list retrieved.' })
-async getArticles(...) { ... }
-
-// PUT — update
-@Put(':id')
-@ApiOperation({ summary: 'Update an article' })
-@ApiParam({ name: 'id', required: true, description: 'Article UUID' })
-@ApiResponse({ status: 200, description: 'Article updated successfully.' })
-@ApiResponse({ status: 404, description: 'Article not found.' })
-async updateArticle(...) { ... }
-
-// DELETE
-@Delete(':id')
-@ApiOperation({ summary: 'Delete an article' })
-@ApiParam({ name: 'id', required: true, description: 'Article UUID' })
-@ApiResponse({ status: 200, description: 'Article deleted successfully.' })
-@ApiResponse({ status: 404, description: 'Article not found.' })
-async deleteArticle(...) { ... }
 ```
+
+> **REST paths:** list the collection at the root (`@Get()`), never `@Get('list')` /
+> `@Get('detail/:id')`. **Return plain objects** — never `@Res()`, `res.json(...)`, `OK()`, or
+> `CREATED()`. **Value-import DTOs** (`import { GetArticlesDto }`, not `import type`) so Swagger and
+> `ValidationPipe` see the reflection metadata — see [API-DESIGN.md §9](./API-DESIGN.md#9-input-dtos).
 
 ---
 
-## 5. DTO decorators
+## 5. Input DTO decorators
 
-Every property in an input DTO **must** have either `@ApiProperty` or `@ApiPropertyOptional`.
+Every property in an input DTO **must** have `@ApiProperty` or `@ApiPropertyOptional`.
 
 ### 5.1 Required property
 
@@ -200,11 +194,11 @@ export class CreateArticleDto {
   @ApiProperty({ description: 'Title of the article', example: 'My first article' })
   @IsString()
   @MinLength(3)
-  title: string;
+  readonly title!: string;
 
   @ApiProperty({ description: 'Article body in markdown', example: '# Hello world' })
   @IsString()
-  content: string;
+  readonly content!: string;
 }
 ```
 
@@ -218,12 +212,7 @@ export class UpdateArticleDto {
   @ApiPropertyOptional({ description: 'New title', example: 'Updated title' })
   @IsOptional()
   @IsString()
-  title?: string;
-
-  @ApiPropertyOptional({ description: 'New content', example: '# Updated' })
-  @IsOptional()
-  @IsString()
-  content?: string;
+  readonly title?: string;
 }
 ```
 
@@ -231,79 +220,117 @@ export class UpdateArticleDto {
 
 ```typescript
 @ApiProperty({ type: () => AddressDto, description: 'Shipping address' })
-address: AddressDto;
+readonly address!: AddressDto;
 ```
 
-Use a lazy function (`() => AddressDto`) to avoid circular reference issues.
+Use a lazy function (`() => AddressDto`) to avoid circular-reference issues.
 
 ---
 
-## 6. Response schema with MEP helpers
+## 6. Response DTOs
 
-MEP uses `OK` / `CREATED` helpers which send custom JSON shapes via `@Res() res: Response`.
-Because the response is sent manually, NestJS cannot auto-infer the response schema.
-Document it explicitly:
+The success payload is described by a **class-transformer response DTO** passed to both
+`@ApiSuccessResponse(Dto)` (docs) and `@Serialize(Dto)` (runtime shaping). Whitelist fields with
+`@Exclude()` on the class + `@Expose()` per property, and document each with `@ApiProperty`. Keep
+these in `responses/` alongside the module.
 
 ```typescript
-// Define a response schema class (place in dtos/ or a separate response-schemas/ folder)
+// modules/article/responses/article.response.ts
 import { ApiProperty } from '@nestjs/swagger';
+import { Exclude, Expose } from 'class-transformer';
 
-class ArticleResponse {
+@Exclude()
+export class ArticleResponse {
   @ApiProperty({ example: 'b3d2e1f9-...' })
-  id: string;
+  @Expose()
+  id!: string;
 
   @ApiProperty({ example: 'My first article' })
-  title: string;
+  @Expose()
+  title!: string;
 
-  @ApiProperty({ example: '2026-01-01T00:00:00.000Z' })
-  createdAt: string;
+  @ApiProperty()
+  @Expose()
+  createdAt!: Date;
 }
-
-// Use in the controller method
-@ApiResponse({ status: 200, description: 'Article retrieved.', type: ArticleResponse })
 ```
 
-> Response schema classes are **not** domain entities and are never instantiated at runtime.
-> Name them `<Entity>Response` and keep them in `dtos/` alongside input DTOs.
+Commands return only the affected `id` (never a full object), so create/update endpoints use a
+small mutate response:
+
+```typescript
+@Exclude()
+export class MutateArticleResponse {
+  @ApiProperty({ example: 'b3d2e1f9-...' })
+  @Expose()
+  id!: string | null;
+}
+```
+
+> Response DTOs are **not** domain entities and are never instantiated by hand. Name them
+> `<Entity>Response`; expose only the fields the client should see.
 
 ---
 
 ## 7. Pagination endpoints
 
-Use `@ApiExtraModels` + `@ApiQuery` to document paginated list endpoints.
+A paginated list response exposes the array as **`items`** (never `data`) alongside
+**`pagination`** — an `OffsetPaginationResponseDto` from `@prowerbdigital/common`. The repository /
+query returns an `OffsetResult<T>` = `{ data, pagination }`; the controller remaps `data` → `items`.
 
 ```typescript
-import { ApiExtraModels, ApiQuery, ApiResponse, getSchemaPath } from '@nestjs/swagger';
+// responses/article-list.response.ts
+import { ApiProperty } from '@nestjs/swagger';
+import { OffsetPaginationResponseDto } from '@prowerbdigital/common';
+import { Exclude, Expose, Type } from 'class-transformer';
 
-class ArticleListResponse {
-  @ApiProperty({ type: [ArticleResponse] })
-  data: ArticleResponse[];
+@Exclude()
+export class ArticleListItemResponse {
+  @ApiProperty({ example: 'b3d2e1f9-...' })
+  @Expose()
+  id!: string;
 
-  @ApiProperty({ example: { page: 1, limit: 20, total: 100, totalPages: 5 } })
-  meta: object;
+  @ApiProperty({ example: 'My first article' })
+  @Expose()
+  title!: string;
 }
 
-@Get('list')
-@ApiOperation({ summary: 'Get paginated list of articles' })
-@ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
-@ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
-@ApiResponse({ status: 200, description: 'Article list retrieved.', type: ArticleListResponse })
-async getArticles(
-  @Query() query: OffsetPaginationDto,
-  @I18n() i18n: I18nContext<I18nTranslations>,
-  @Res() res: Response,
-) {
-  const { data, meta } = await this.queryBus.execute(new GetArticlesQuery(query));
-  OK(res, await i18n.t(ARTICLE_I18N_KEYS.SUCCESS.LIST), data, meta);
+@Exclude()
+export class ArticleListResponse {
+  @ApiProperty({ type: [ArticleListItemResponse] })
+  @Expose()
+  @Type(() => ArticleListItemResponse)
+  items!: ArticleListItemResponse[];
+
+  @ApiProperty({ type: OffsetPaginationResponseDto })
+  @Expose()
+  @Type(() => OffsetPaginationResponseDto)
+  pagination!: OffsetPaginationResponseDto;
 }
 ```
+
+```typescript
+// controller — page/limit/search are documented automatically from GetArticlesDto
+@Get()
+@ApiOperation({ summary: 'List articles — page paginated' })
+@ApiSuccessResponse(ArticleListResponse)
+@Serialize(ArticleListResponse)
+async getArticles(@Query() query: GetArticlesDto) {
+  const { data, pagination } = await this.queryBus.execute(new GetArticlesQuery(query));
+  return { items: data, pagination };
+}
+```
+
+> `GetArticlesDto extends OffsetPaginationDto`, whose `page` / `limit` / `search` fields already
+> carry `@ApiPropertyOptional` — so `@Query()` documents them automatically. Add extra `@ApiQuery`
+> only for module-specific filters not covered by the DTO.
 
 ---
 
 ## 8. Enums
 
 ```typescript
-// Define enum in the module constants or a shared enums file
+// Define the enum in the module constants or a shared enums file
 export enum ArticleStatus {
   DRAFT = 'DRAFT',
   PUBLISHED = 'PUBLISHED',
@@ -315,13 +342,9 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsEnum } from 'class-validator';
 
 export class CreateArticleDto {
-  @ApiProperty({
-    enum: ArticleStatus,
-    description: 'Publication status',
-    example: ArticleStatus.DRAFT,
-  })
+  @ApiProperty({ enum: ArticleStatus, description: 'Publication status', example: ArticleStatus.DRAFT })
   @IsEnum(ArticleStatus)
-  status: ArticleStatus;
+  readonly status!: ArticleStatus;
 }
 ```
 
@@ -329,24 +352,31 @@ export class CreateArticleDto {
 
 ## 9. Auth — Bearer token
 
-### Setup (already covered in §2)
+`setupSwagger({ bearerAuthName: 'SWAGGER_BEARER_TOKEN' })` registers the Bearer security scheme —
+no `DocumentBuilder` wiring needed. To attach that requirement to a controller's routes (lock icon
+in the UI), add `@ApiBearerAuth('SWAGGER_BEARER_TOKEN')` — the name must match `bearerAuthName`.
 
-`addBearerAuth` in `DocumentBuilder` + `@ApiBearerAuth('access-token')` on the controller class
-is all that is required. The Swagger UI will then show an **Authorize** button.
+```typescript
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+
+@Controller({ version: '1', path: 'articles' })
+@ApiTags('Articles')
+@ApiBearerAuth('SWAGGER_BEARER_TOKEN')
+export class ArticleController { ... }
+```
 
 ### How to authenticate in the UI
 
 1. Click **Authorize** in the top-right of the Swagger UI.
 2. Enter the JWT access token (without the `Bearer ` prefix) in the **Value** field.
-3. Click **Authorize**, then **Close**.
-4. All subsequent requests will include the `Authorization: Bearer <token>` header.
+3. Click **Authorize**, then **Close** — subsequent requests include `Authorization: Bearer <token>`.
 
 ---
 
 ## 10. Public routes
 
-When a route has `@Public()`, it does not require auth. Reflect this in Swagger by overriding
-the class-level `@ApiBearerAuth` with an empty security array at the method level:
+When a route is `@Public()` it needs no auth. Reflect that in Swagger by overriding the
+class-level Bearer requirement with an empty security array at the method level:
 
 ```typescript
 import { ApiSecurity } from '@nestjs/swagger';
@@ -354,33 +384,31 @@ import { ApiSecurity } from '@nestjs/swagger';
 @Public()
 @Post('sign-up')
 @ApiOperation({ summary: 'Register a new user' })
-@ApiSecurity([])   // override class-level @ApiBearerAuth — no auth required
-@ApiResponse({ status: 201, description: 'User registered.' })
-async signUp(@Body() body: SignUpDto, ...) { ... }
+@ApiSecurity([]) // override the class-level @ApiBearerAuth — no auth required
+@ApiSuccessResponse(SignUpResponse)
+@Serialize(SignUpResponse)
+async signUp(@Body() body: SignUpDto) { ... }
 ```
 
 ---
 
 ## 11. Environment-based toggling
 
-Swagger must **never** be exposed in production. The pattern shown in §2 (`NODE_ENV !== 'production'`)
-is the minimum requirement. For more control use a dedicated env var:
+Swagger must **never** be exposed in production. The `setupSwagger` call is already guarded by
+`nodeEnv !== NodeEnv.Prod` (§2) — keep it that way. For finer control, gate it on a dedicated env
+var instead:
 
 ```typescript
-// .env
+// venv/.env.<env>
 SWAGGER_ENABLED=true
 
 // main.ts
-if (process.env['SWAGGER_ENABLED'] === 'true') {
-  const config = new DocumentBuilder()
-    ...
-    .build();
-  SwaggerModule.setup('api/docs', app, document);
+if (process.env.SWAGGER_ENABLED === 'true') {
+  setupSwagger(app, { title: '...', description: '...', path: 'api/docs', bearerAuthName: 'SWAGGER_BEARER_TOKEN' });
 }
 ```
 
-Bind `SWAGGER_ENABLED` to `false` in all production deployment configs (Docker Compose,
-Kubernetes manifests, CI/CD pipelines).
+Bind `SWAGGER_ENABLED=false` in all production deployment configs (Docker, Kubernetes, CI/CD).
 
 ---
 
@@ -388,15 +416,15 @@ Kubernetes manifests, CI/CD pipelines).
 
 Before submitting a PR for any HTTP module, verify:
 
-- [ ] `@nestjs/swagger` is in `dependencies` (not `devDependencies`)
-- [ ] `DocumentBuilder` in `main.ts` sets title, description, version, and `addBearerAuth`
-- [ ] Swagger setup is guarded by `NODE_ENV !== 'production'` (or `SWAGGER_ENABLED`)
-- [ ] Every HTTP controller has `@ApiTags` and `@ApiBearerAuth('access-token')`
-- [ ] Every controller method has `@ApiOperation` and at least one `@ApiResponse`
-- [ ] Route parameters (`:id`) are documented with `@ApiParam`
-- [ ] Query string parameters are documented with `@ApiQuery`
-- [ ] Every DTO property has `@ApiProperty` or `@ApiPropertyOptional` with `description` and `example`
+- [ ] `main.ts` calls `setupSwagger(app, { title, description, path, bearerAuthName })` from `@prowerbdigital/common`
+- [ ] Swagger setup is guarded by `nodeEnv !== NodeEnv.Prod` (or `SWAGGER_ENABLED`)
+- [ ] Every HTTP controller has `@ApiTags` (and `@ApiBearerAuth('<bearerAuthName>')` for protected controllers)
+- [ ] Every method has `@ApiOperation` + `@ApiSuccessResponse(<ResponseDto>)` + `@Serialize(<ResponseDto>)`
+- [ ] Collections listed at the root (`@Get()`), items at `@Get(':id')` — no `list` / `detail` path segments
+- [ ] Handlers return plain objects — no `@Res()`, `res.json(...)`, `OK()`, or `CREATED()`
+- [ ] Path params (`:id`) documented with `@ApiParam`; DTOs value-imported (never `import type`)
+- [ ] Every input DTO property has `@ApiProperty` / `@ApiPropertyOptional` with `description` + `example`
 - [ ] Enum properties use `{ enum: MyEnum }` in `@ApiProperty`
-- [ ] Public routes (`@Public()`) have `@ApiSecurity([])` to remove the lock icon
-- [ ] Paginated endpoints document both the `data` array and `meta` object in `@ApiResponse`
-- [ ] Response schema classes (`<Entity>Response`) exist for endpoints that return data
+- [ ] Response DTOs (`<Entity>Response`) use `@Exclude()` + `@Expose()` and live in `responses/`
+- [ ] Paginated endpoints expose `items` + `pagination` (`OffsetPaginationResponseDto`), never `data`
+- [ ] Public routes (`@Public()`) add `@ApiSecurity([])` to drop the lock icon
